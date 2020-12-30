@@ -1,0 +1,23 @@
+#+title: sxpyr: a flexible Lisp reader for Python
+
+Parse s-expressions, edn, and a variety of lisp dialects.
+
+Currently supports something like the union of Common Lisp, Scheme,
+Racket, Clojure, Hy, and Emacs Lisp.
+
+This library is designed to be vendored for projects that want to
+avoid dependencies. It bears an MIT license and sxpyr.py can be
+copied directly into other projects so that they can parse a wide
+variety of formats, including Clojure's EDN.
+
+Since sxpyr is designed to support a variety of different dialects, a
+second pass is almost always needed in order to match the output of
+native readers. This second pass is a good place to raise additional
+syntax errors for the dialect you are working with. Some dialects have
+already been implemented.
+
+Due to deeper differences between dialects, in some cases it is
+necessary to configure the reader in advance. This happens in cases
+where a particular form is valid in two different dialects and one
+or both parses are sufficiently divergent that it is not possible
+to recover the correct parse for the other dialect.
