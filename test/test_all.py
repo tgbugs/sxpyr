@@ -4,40 +4,39 @@ from sxpyr import configure
 from sxpyr import *
 
 
-def test():
-    debug = '-d' in sys.argv
-    printexp = debug or '-e' in sys.argv
-    if debug:
-        import sxpyr.sexp
-        sxpyr.sexp.debug = True
+parse = configure()
+parse_cl = configure(syms_cl)
+parse_el = configure(syms_el)
+parse_gui = configure(syms_gui,
+                      quote_in_symbol=True,)
+parse_clj = configure(syms_clj,
+                      quote_in_symbol=True,
+                      #curlies_map=True,
+                      #immutable_cons=True,
+                      additional_whitespace=(',',),)
+parse_hy = configure(syms_hy)
 
-    def sprint(gen, match=None):
-        res = []
-        for parsed_expr in gen:
-            if printexp:
-                print('expr:', parsed_expr)
 
-            res.append(parsed_expr)
+def sprint(gen, match=None):
+    res = []
+    for parsed_expr in gen:
+        if printexp:
+            print('expr:', parsed_expr)
 
-        #print(res)
-        if match is not None:
-            assert res == match, (res, match)
+        res.append(parsed_expr)
 
-        return res
+    #print(res)
+    if match is not None:
+        assert res == match, (res, match)
 
-    parse = configure()
-    parse_cl = configure(syms_cl)
-    parse_el = configure(syms_el)
-    parse_gui = configure(syms_gui,
-                          quote_in_symbol=True,)
-    parse_clj = configure(syms_clj,
-                          quote_in_symbol=True,
-                          #curlies_map=True,
-                          #immutable_cons=True,
-                          additional_whitespace=(',',),)
-    parse_hy = configure(syms_hy)
+    return res
 
+
+def test_parse(debug=False):
     # asdf
+
+    sprint(parse("#{HRM}#"))  # FIXME ambiguous, used by guile
+    sprint(parse("#{HRM} #"))  # with this
 
     sprint(parse("(# \"lol\")"))
     sprint(parse("#"))
@@ -145,103 +144,6 @@ def test():
     sprint(parse_el("(?\\N{sigh}oops)"))  # oh boy, yeah, this is an error
     # but those curlies don't work like braces, they are just part of the symbol name
     # ugh what a mess, definitely not reading this stuff right now
-
-    # charachter literals
-    def make_test_char(char_marker):
-        def inner (s):
-            if isinstance(s, str):
-                return '(' + char_marker + s + ')'
-            else:
-                return '(' + ''.join([char_marker + ss for ss in s]) + ')'
-
-        return inner
-
-    test_suffixes = (
-              ("\\", ListP.from_elements(Char('\\'),)),
-              (" ", ListP.from_elements(Char(' '),)),
-              (";", ListP.from_elements(Char(';'),)),
-              (")", ListP.from_elements(Char(')'),)),
-              ("z", ListP.from_elements(Char('z'),)),  # can't use a because emacs -> x07
-              ("  a", ListP.from_elements(Char(' '), Atom('a'))),
-              ("  'a", ListP.from_elements(Char(' '), Quote(Atom('a')))),
-              (") a", ListP.from_elements(Char(')'), Atom('a'))),
-              (" 'a", ListP.from_elements(Char(' '), Quote(Atom('a')))),
-              (")'a", ListP.from_elements(Char(')'), Quote(Atom('a')))),
-              (" a", ListP.from_elements(Char(' '), Atom('a'))),
-              (";a", ListP.from_elements(Char(';'), Atom('a'))),
-              (")a", ListP.from_elements(Char(')'), Atom('a'))),
-              ("'a", ListP.from_elements(Char("'"), Atom('a'))),
-              ("aa", ListP.from_elements(Char('aa'),)),  # XXX REMINDER that non-existent char errors are NO LONGER reader errors
-              (("y", "z"), ListP.from_elements(Char('y'), Char('z'))),
-              ("newline", ListP.from_elements(Char('newline'),)),
-              )
-    effs = dict(
-        tcq = make_test_char('?'),
-        tcqe = make_test_char('?\\'),
-        tcs = make_test_char('#\\'),
-        tcb = make_test_char('\\'),
-    )
-    for key, fun in effs.items():
-        for (string, ast) in test_suffixes:
-            # todo for parser in (parse, parse_cl) etc. based on which fun/key is used
-            tstr = fun(string)
-            if debug:
-                print('tc:', repr(tstr))
-            if key in ('tcq', 'tcqe'):
-                parser = parse_el
-            elif key == 'tcb':
-                parser = parse_clj
-            else:
-                parser = parse
-
-            #print('string:', string)
-            if (#string == 'aa' and key != 'tcqe' or
-                #string == 'newline' and key == 'tcqe' or
-                string == "'a" and parser == parse_clj):# or string == 'a)' and key == '':
-                sprint(parser(tstr))  # will fail in the second pass
-                #try:
-                    #sprint(parser(tstr), match=[ast])
-                    #assert False, 'should have failed'
-                #except ValueError as e:
-                    #pass
-            elif (string == '\\' and key == 'tcq'):
-                try:
-                    sprint(parser(tstr), match=[ast])
-                    assert False, 'should have failed'
-                except SyntaxError as e:
-                    pass
-            elif key == 'tcqe':
-                if ast is not None:
-                    ast = ast.from_elements(*(EChar([SEscape(_._value)])
-                                              if isinstance(_, Char)
-                                              else _ for _ in ast.collect))
-
-                # a number of these now read without error and the
-                # fact that there is no such charachter is deferred
-                if string == ' a':
-                    ast = ListP.from_elements(EChar([SEscape(' '), 'a']),)
-                elif string == ';a':
-                    ast = ListP.from_elements(EChar([SEscape(';'), 'a']),)
-                elif string == ')a':
-                    ast = ListP.from_elements(EChar([SEscape(')'), 'a']),)
-                elif string == '\'a':
-                    ast = ListP.from_elements(EChar([SEscape('\''), 'a']),)
-                elif string == 'aa':
-                    ast = ListP.from_elements(EChar([SEscape('a'), 'a']),)
-                elif string == 'newline':
-                    ast = ListP.from_elements(EChar([SEscape('n'), *'ewline']),)
-
-                sprint(parser(tstr), match=[ast])
-            else:
-                sprint(parser(tstr), match=[ast])
-
-    #tc_el_esc
-    #tc_el_uesc
-    #tc_cl
-    #tc_clj
-    #tc_rr
-    #tc_ga
-    #tc_gu
 
     # charlits old
     sprint(parse(r'(list #\ a)'))
@@ -496,8 +398,100 @@ a bit for complexity
 )
 '''
     sprint(parse(test_cfg1))
-    #return
 
+
+def test_chars():
+    # charachter literals
+    def make_test_char(char_marker):
+        def inner (s):
+            if isinstance(s, str):
+                return '(' + char_marker + s + ')'
+            else:
+                return '(' + ''.join([char_marker + ss for ss in s]) + ')'
+
+        return inner
+
+    test_suffixes = (
+              ("\\", ListP.from_elements(Char('\\'),)),
+              (" ", ListP.from_elements(Char(' '),)),
+              (";", ListP.from_elements(Char(';'),)),
+              (")", ListP.from_elements(Char(')'),)),
+              ("z", ListP.from_elements(Char('z'),)),  # can't use a because emacs -> x07
+              ("  a", ListP.from_elements(Char(' '), Atom('a'))),
+              ("  'a", ListP.from_elements(Char(' '), Quote(Atom('a')))),
+              (") a", ListP.from_elements(Char(')'), Atom('a'))),
+              (" 'a", ListP.from_elements(Char(' '), Quote(Atom('a')))),
+              (")'a", ListP.from_elements(Char(')'), Quote(Atom('a')))),
+              (" a", ListP.from_elements(Char(' '), Atom('a'))),
+              (";a", ListP.from_elements(Char(';'), Atom('a'))),
+              (")a", ListP.from_elements(Char(')'), Atom('a'))),
+              ("'a", ListP.from_elements(Char("'"), Atom('a'))),
+              ("aa", ListP.from_elements(Char('aa'),)),  # XXX REMINDER that non-existent char errors are NO LONGER reader errors
+              (("y", "z"), ListP.from_elements(Char('y'), Char('z'))),
+              ("newline", ListP.from_elements(Char('newline'),)),
+              )
+    effs = dict(
+        tcq = make_test_char('?'),
+        tcqe = make_test_char('?\\'),
+        tcs = make_test_char('#\\'),
+        tcb = make_test_char('\\'),
+    )
+    for key, fun in effs.items():
+        for (string, ast) in test_suffixes:
+            # todo for parser in (parse, parse_cl) etc. based on which fun/key is used
+            tstr = fun(string)
+            if debug:
+                print('tc:', repr(tstr))
+            if key in ('tcq', 'tcqe'):
+                parser = parse_el
+            elif key == 'tcb':
+                parser = parse_clj
+            else:
+                parser = parse
+
+            #print('string:', string)
+            if (#string == 'aa' and key != 'tcqe' or
+                #string == 'newline' and key == 'tcqe' or
+                string == "'a" and parser == parse_clj):# or string == 'a)' and key == '':
+                sprint(parser(tstr))  # will fail in the second pass
+                #try:
+                    #sprint(parser(tstr), match=[ast])
+                    #assert False, 'should have failed'
+                #except ValueError as e:
+                    #pass
+            elif (string == '\\' and key == 'tcq'):
+                try:
+                    sprint(parser(tstr), match=[ast])
+                    assert False, 'should have failed'
+                except SyntaxError as e:
+                    pass
+            elif key == 'tcqe':
+                if ast is not None:
+                    ast = ast.from_elements(*(EChar([SEscape(_._value)])
+                                              if isinstance(_, Char)
+                                              else _ for _ in ast.collect))
+
+                # a number of these now read without error and the
+                # fact that there is no such charachter is deferred
+                if string == ' a':
+                    ast = ListP.from_elements(EChar([SEscape(' '), 'a']),)
+                elif string == ';a':
+                    ast = ListP.from_elements(EChar([SEscape(';'), 'a']),)
+                elif string == ')a':
+                    ast = ListP.from_elements(EChar([SEscape(')'), 'a']),)
+                elif string == '\'a':
+                    ast = ListP.from_elements(EChar([SEscape('\''), 'a']),)
+                elif string == 'aa':
+                    ast = ListP.from_elements(EChar([SEscape('a'), 'a']),)
+                elif string == 'newline':
+                    ast = ListP.from_elements(EChar([SEscape('n'), *'ewline']),)
+
+                sprint(parser(tstr), match=[ast])
+            else:
+                sprint(parser(tstr), match=[ast])
+
+
+def test_paths():
     from pathlib import Path
     git_path = Path('~/git/').expanduser()
     git_nofork_path = git_path / 'NOFORK'
@@ -733,4 +727,12 @@ def test_fails():
 
 
 if __name__  == '__main__':
-    test()
+    debug = '-d' in sys.argv
+    printexp = debug or '-e' in sys.argv
+    if debug:
+        import sxpyr.sexp
+        sxpyr.sexp.debug = True
+
+    test_parse()
+    test_paths()
+    test_fails()

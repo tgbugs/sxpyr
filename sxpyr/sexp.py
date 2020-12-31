@@ -20,6 +20,8 @@ class _m:
         return type(self) == type(other) and self.collect == other.collect
 
 
+# abstract syntax tree node types
+
 class Ast:
 
     def __repr__(self):
@@ -202,7 +204,7 @@ class Char(Ast):
 
 
 class EChar(Char):
-    """ TODO chars with escape sequences in them """
+    """ chars with escape sequences """
 
     __eq__ = _m.eq_collect
 
@@ -291,6 +293,44 @@ class FeatureExpr(WrapsNext):
     """ Common Lisp feature expressions """
 
 
+# second phase data types (incomplete)
+
+
+class DataType:
+    """ objects that have specific semantics in certain dialects
+    this provides a layer of indirection so that the choice of
+    the python structure used internally can be tailored to the
+    exact use case without blindly following upstream """
+
+
+class Cons(DataType):
+    """ A single cell in a singly linked list, usually mutable. """
+
+
+class List(DataType):
+    """ Usually a mutable singly linked list. """
+
+
+class Array(DataType):
+    """ An n-dimensional array. """
+
+
+class Vector(Array):
+    """ A one dimensional array of fixed length.
+    Access is expected to be O(1). """
+
+
+class Set(DataType):
+    """ A mathematical set. """
+
+
+class Dict(DataType):
+    """ Sometimes called a hash, sometimes called a map.
+    Expectation is that access is O(1). """
+
+
+# class for pda states
+
 class State:
     state_names = {}  # update this with all the dialect variants of the names
     def __init__(self, index):
@@ -304,23 +344,16 @@ class State:
             pass
 
 
+# the unparsable char
+
 unp = object()  # unparsable  # cannot use None
 
-escape_hat = SEscape('^')
+escape_hat = SEscape('^')  # needed to parse elisp escape for control ?\^?
 
-# #{ requires och = '{'
 syms_base = ('(', ')', '[', ']',
              ';', '"', "'", '`',
              ',', '@',
              '\n', '\t', ' ', ':', '\\', '\\', unp,
-             # supporting both ? and #\ for char lits beyond mad
-             # unless they have the same behavior or ? must be used
-             # with an explicit escape at all times ?\ the second
-             # option seems reasonable
-
-             # no, we are going to straight up not allow charachter
-             # literals AT ALL in the sxpyr format, configuration
-             # and interchange rarely need ... SIGH ... but they might
              '{', '}',
              '#', '|', '|')
 
@@ -553,19 +586,6 @@ def configure(_symbols=None,
         elif char == sq: collect = to_state(q)
         elif char == gr: collect = to_state(i)
         elif char == cm: collect = to_state(u1)
-        elif char == at:
-            breakpoint()
-            collect = to_state(us)  # FIXME only if we are in state u
-        # XXX not clear what we want to do with comma just yet
-        # FIXME also not clear that we want to allow , and ~ to act as unquote in
-        # just any old situation, but need clarity on why traditionally it always
-        # is allowed to expand that way
-        # I think the anwer is that checking to see if you are in some deeply nested
-        # quasiquote situation could be extremely expensive and require long range
-        # interactions in the reader, which I think would be ok for just this one
-        # case ...
-        # it kind of pushes us toward a full stack machine though because I think
-        # it might be equivalent to being able to inspect the whole stack
         elif char == pi: collect = to_state_collect(v)
         # XXX warning: this branch for pipe only works correctly if
         # collect is None
@@ -594,10 +614,6 @@ def configure(_symbols=None,
             collect = None
         elif (char in (op, os, oc, sq, gr, cm) or
               state == m and char in (qm, ha) or  # and char_auto_end ??? chars may end chars ie not cl
-            # NOTE ha is indeed in m_ends
-            #char == sc and state != m1 or
-            #char == sc and state != m1 or
-            #char == qm or  # ?a?b
             char == dq and state != s):
             collect = push_state_from_char(collect_stack, collect, stack, char)
         elif stack[-1] == blk:
@@ -629,9 +645,6 @@ def configure(_symbols=None,
 
         if state_prev in listlikes and char in (cp, cs, cc):
             char = None
-
-        #if state_prev == m1 and char == ')':
-            #breakpoint()
 
         if char == eof:  # sigh using a branch for something that provably only happens once
             if state_prev in (s, v, *listlikes):
@@ -711,9 +724,11 @@ def configure(_symbols=None,
 
 
     def parse(iter_over_len_1_strings):
-        #states  # SIGH
+        """ First phase parse into a common representation
+        of a generic lisp AST. A second, dialect specific
+        phase is needed to complete the functionality needed
+        for read. """
         bp = False
-        #print(iter_over_len_1_strings)
         if not isinstance(iter_over_len_1_strings, GeneratorType):
             iter_over_len_1_strings = (_ for _ in iter_over_len_1_strings)
 
