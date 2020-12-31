@@ -1,0 +1,447 @@
+#+macro: nil
+
+* File extensions
+=.sxp= and =.sxpr= are suitably uninhabited
+* Areas the induce massive complexity / are highly variant between dialects / internally inconsistent.
+1. reading character literals
+2. escape sequences
+3. chars that end an unescaped symbol
+4. verbatim symbols
+5. block comments
+6. here strings
+7. feature expressions
+   
+Some hypotheses from evolutionary biology.
+1. There is not much selective pressure on character literals.  This
+   may be because codebases that need to deal with char literals
+   usually do not need to be ported.
+2. Far more likely, the edge cases I'm observing are rarely
+   encountered in practice because most sane people put spaces between
+   things. If this is the case, then it actually lends support to 1
+   since it implies that the behavior of the readers when character
+   literals are not followed by whitespace is an extremely rare
+   environment so no one reports bugs about them since they are fairly
+   easy to fix, just add whitespace.
+* Reading behavior
+Bold entries are *wat*.
+
+| dialect     | implementation | XComment  | ~(and 'a'b'c)~ | ~(and 'a`b)~ | backslash          | char       | verbatim symbol |
+|-------------+----------------+-----------+----------------+--------------+--------------------+------------+-----------------|
+| Common Lisp | sbcl           | ~#+()~    | C              | B            | esc                | ~#\~       | pipe            |
+| Scheme R?RS | guile          | ~#;~      | *a'b'c*        | a`b          | esc                | ~#\~       | ~#{}#~          |
+|             | gambit         | ~#;~      | c              | b            | esc                | ~#\~       | pipe            |
+| Racket      | 3m/bc          | ~#;~      | c              | b            | esc                | ~#\~       | pipe            |
+|             | cs             | ~#;~      | c              | b            | esc                | ~#\~       | pipe            |
+|             | cgc            | ~#;~      | c              | b            | esc                | ~#\~       | pipe            |
+| Emacs Lisp  | Emacs          | {{{nil}}} | c              | b            | esc                | ~?~        | {{{nil}}}       |
+| Clojure     | Java           | ~#_~      | a'b'c          | user/b       | char               | ~\~ [fn:2] | {{{nil}}}       |
+|             | ECMAScript     | ~#_~      | a'b'c          | user/b       | char               | ~\~        | {{{nil}}}       |
+| Hy          | Python         | ~#_~      | c              | *a`b*        | *literally itself* | {{{nil}}}  | {{{nil}}}       |
+| sxpyr       | Python         | ~#_~ ~#;~ | syntax error   | {{{nil}}}    | ???                | ~#\~       | syntax error?   |
+|             |                |           |                |              |                    |            |                 |
+
+[fn:2] I kind of get the feeling that RH did this because for the same
+reason as the other general shortenings for names compared to other
+lisps. The fact that ~#\~ is more consistent and homogenous and also
+easier to implement as a result seems to have been on the wrong side
+of the design tradeoffs, which is entirely understandable. It also
+leaves ~#\~ open for some future use (perhaps unfortunately).
+
+The Clojure ~\~ is ever so slightly different from the emacs ~?~.
+Specifically, it requires a single additional separator in order to
+start the next expression. Otherwise it seems like it tries to read
+~\1~ as a char spec. In elisp an unescaped whitespace character will
+self terminate AND read as a character, escaped whitespace chars
+behave the same way as in Clojure. Thus I think we can pull a hack by
+adding a ~char_auto_escape~ setting. It looks like common lisp behaves
+like Clojure in this sense while Racket and the schemes do not. I'm
+guessing this is because they determined that it was somewhat nuts to
+expect there to be a multichar char specification that starts with
+whitespace.  There is a slight difference from elisp however, which is
+that you cannot use escape, because ~#\\~ reads as the backslash
+character. Ugh. What mess.
+
+Two axes.
+1. Auto escape.
+2. Whitespace and other m_ends auto end themselves.
+
+All four combinations are possible.
+
+| dialects             | auto escape | auto end |
+|----------------------+-------------+----------|
+| racket, gambit[fn:3] | x           | x        |
+| common lisp, clojure | x           |          |
+| elisp[fn:4]          |             | x        |
+|                      |             |          |
+
+[fn:3] Gambit feels inconsistent but that is probably because I don't
+know exactly what their terminals are.
+
+[fn:4] Elisp's auto end behavior is again subtly different from
+Racket. Consider ~?'1~ or ~?\'1~ vs ~#\'1~. This may be because racket
+only matches longer char names explicitly. I've seen sbcl produce some
+_really_ long charachter names for things like ま which print as
+~#\HIRAGANA_LETTER_MA~ and ~(string #\HIRAGANA_LETTER_MA)~ back to
+~"ま"~.
+
+** symbols
+Clojure's symbols are at once simpler and more complex. No spaces
+allowed. No syntax for verbatim symbols. On the other hand, symbols
+have significant morphology, including empty prefix behavior on
+keywords that is reminiscent of stuff from the rdf world! Also major
+restrictions on use of dots due to java interop and potential collisions there
+and ~/~ because it is used as the explicit separator for namespaces.
+** 'a'b'c
+This divergence means that we will likely have to make symbols that
+are terminated by a quote a syntax error since the interpretation is
+ambiguous.
+*** guile
+Haven't been able to find anything about this yet.
+https://www.gnu.org/software/guile/manual/html_node/Symbols.html
+https://www.gnu.org/software/guile/manual/html_node/Symbol-Read-Syntax.html
+
+Crickets on this. I mean, I get that you just tell the user that they
+are at fault for not putting spaces between their symbols, but REALLY?
+I've read the grammars for r{5,6,7}rs and I'm pretty darned sure that
+reading 'a'b'c as a single symbol is NOT to spec.
+*** clojure
+The docs on the clojure reader are confusing, but ~'~ is listed as a
+valid symbol character which would be the exception mentioned in the
+section on macro chars.
+https://clojure.org/reference/reader#_reader_forms
+https://clojure.org/reference/reader#macrochars
+** backslash
+Clojure makes this problematic. For sxpyr ~#\~ is likely going to be the
+preferred character literal syntax, but ~?~ may also be allowed since they
+are compatible with Clojure syntax and recoverable from the parse.
+
+One issue with allowing ~?~ though is that it 
+* Issues
+** Hy
+Needs ~b"~ to read byte strings as opposed to '(b "hello") which would
+read the same way right now.
+** Emacs Lisp
+The ielm reader does not parse more than one sexp at a time.
+
+Check out ~parse-partial-sexp-paren-comments~ in 
+[[file:~/git/NOFORK/emacs/test/src/syntax-tests.el::ert-deftest parse-partial-sexp-paren-comments][syntax-tests.el]]
+for an example of how to locally tune the elisp reader so that
+it can parse syntax from other lisps.
+
+Characters. Oh. Dear.
+* Syntax decisions
+
+Note that ~\S-+~ should be interpreted as meaning whitespace or
+anything else that terminates that form.
+
+| element            | syntax                                          |
+|--------------------+-------------------------------------------------|
+| the usual suspects | ~?' ?` ?, pipe ?\space ?\tab ?\newline~         |
+| keyword            | ~(rx ?: (one-or-more (not tus)))~               |
+| symbol             | ~(rx (not ?: ?\\ tus) (one-or-more (not tus)))~ |
+|                    |                                                 |
+** symbols
+It is quite nice to be able have escape behavior implemented in a
+simple, global, and homogeneous way. Clojure seems to have taken the
+route which is to make the implementation of the language more complex
+in order to (presumably) decrease complexity somewhere else.
+
+On the other hand allowing escape to be used anywhere means that there
+are now multiple ways to represent the same symbol, which is likely bad
+for complexity.
+
+On the third hand Clojure's symbol syntax is nearly a subset of the
+more generic syntax, so the sxpyr reader should be more accepting except
+in the case of using quote in symbols or ending symbols. That likely needs
+to be an error to prevent accidental ambiguity or we need to add specific
+language to indicate which features are enabled/used for a certain file which
+will be possible since we have to implement the variants anyway.
+
+* Transitions
+:PROPERTIES:
+:CREATED:  [2020-12-18 Fri 22:20]
+:END:
+actions
+
+^ pop the top of the stack, also implicitly ends the current container
+
+>? push state ? onto stack, implicitly starts a new container
+
++ append to current container, if there is no container create a new atom container
+  
+hand drawn layout
+|---+--------+---|
+| e |        | p |
+|---+--------+---|
+|   | ^ ? >? |   |
+|---+--------+---|
+| + |        | x |
+|---+--------+---|
+
+current notation
+|----+--------+---|
+| \$ |        | + |
+|----+--------+---|
+|    | ^ ? >? |   |
+|----+--------+---|
+| /  |        | x |
+|----+--------+---|
+
+# @ start a new container
+# $ the current container where we are collecting things is done
+
+
+a atom
+q quote
+k keyword
+s string
+t tuple
+l list
+d dict
+bos beginning of stream
+c comment
+e escape
+
+f feature expression before we enter x
++o block comment+
++p pipe literal+
++u usually quite possibly ending a block comment+
+i quasiquote
+u unquote AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA yeah ...
+v inside pipes verbatim symbol
+n nested block comment
+m question *m*\ ark
+
+
+! error BANG everything explodes
+_ done
+. impossible state NOTE switched to space for this
+~ no op
+
+Transition matrix
+tok = current toke
+tos = top of stack aka state
+| tok tos | bos    | a  | k  | q | s  | t | l | c | e        |
+|---------+--------+----+----+---+----+---+---+---+----------|
+| eof     | ^      | ^  | ^  | ! | !  | ! | ! | ^ | !        |
+| (       | >t>bos | ^  | ^  | ^ | +  |   |   | + | +        |
+| )       | !      | ^  | ^  | ^ | +  | ^ |   | + | +        |
+| [       | >l>bos | ^  | ^  | ^ | +  |   |   | + | +        |
+| ]       | !      | ^  | ^  | ^ | +  |   | ^ | + | +        |
+| ;       | >c     | ^  | ^  | ^ | +  |   |   | + | +        |
+| "       | >s     | ^  | ^  | ^ | ^  |   |   | + | +        |
+| '       | >q>bos | ^  | ^  | ^ | +  |   |   | + | +        |
+| rest    | >a+    | +  | +  |   | +  |   |   | + | +        |
+| :       | >k+    | +  | +  |   | +  |   |   | + | + or >k+ |
+| newline | ~      | ^  | ^  | ^ | +  |   |   | ^ | +        |
+| wsnn    | ~      | ^  | ^  | ^ | +  |   |   | + | +        |
+| \       | >e     | >e | >e |   | >e |   |   | + | +        |
+
+When there is nothing left to pop and we didn't hit an error we are done.
+
+I'm having a bit of trouble with quotes. The behavior with the first
+char is weird.  Actually I think I know what is up. I think it is
+because I was thinking about them incorrectly. They actually push bos
+onto the stack, and note that bos is not the empty stack. What this means
+is that if you are seeing q it means that you are seeing the terminal char
+of the previous thing so you always pop. When we pop the quote we then
+have to do something on the way out when we hit bos again, which is where
+we will do that. We use the passing back through of the q state to put the
+value in the quote.
+
+Woah, so \ has some completely unexpected behavior when it is just bare.
+It actually excapes the next char no matter what. Not sure what it does
+if it is before a keyword \:like \:this. It doesn't exactly imediately
+transition it sort of waits to see? Problem is when a file starts with
+that then backslash space will get you. ~\ \ ~ vs ~\a\a~ is a challenge.
+I think there is a single special case that has to be handled which is
+that if there is no existing container that the value could be appended
+to then it is an atom, and there really the only difference is when the
+thing that is being escaped is whitespace? ooooo in elisp you can escape
+comments ... interesting, seems like the only exception is for
+
+wait, what the ? since when has it been possible to escape parens
+in lisp !?
+
+colon =:= alone is a symbol and cannot be a target for assignment
+
+Simplified version where we ignore the distinction between list and
+tuple and push everything down to list.
+
+FIXME man entering a quote vs leaving a quote super problematic?
+or am I just missing the obvious that if you pop and land in a
+quote on the way out you terminate the quote as well?
+
+x maybe eat next, works like quote including the fact that an
+unmatched close paren will produce a syntax error
+actually not clear that we need this at all? or ... hrm
+no we have to make a call on what must be implemented for this
+XXX FIXME make sure we test #; #; or #_ #; etc. that they
+resolve correctly
+
+h hash, not entirely clear how we are going to deal with this one
+since it has so many different behaviors, the exit behavior on
+the variants is also different enough that it may add significant
+complexity to support cl feature expressions, and since cl has the
+easiest time of implementing #_ and #; I think we just don't support
+feature expressions? or maybe we do because it would be stupid powerful
+if you could use them to control the config in a safe way? like really
+stupid powerful, same variable set according to the system in question
+without having to worry about turing completeness ... (I think)
+most of the time the behavior for what to do about a leading hash
+can be left to the implementation
+note that ~h\~ -> error in clojure in may cases
+
+I actually think we probably need to disallow a whole bunch of #thing
+forms because their interpretation is so incredibly variable between
+different lisps
+
+also not doing block comments, this is a reader for config files not
+executable code, so there will always be a layer in between where
+unwanted stuff can be filtered out
+
+note that block comments ala =#||#= are missing at the moment might
+add them since it won't be too much trouble, except that the elisp
+won't work with those. Essentially I'm writing this reader to be
+able to read more than it will actually accept for the orthauth
+use case.
+
+
+pipe possibly also needed/used to being able to write out =| silly LiSp symbols |=
+that will add a pipe literal to the state list, it is a bit tricky here because
+elisp doesn't support this syntax and will read things differently, basically cl
+and scheme are in the || family and elisp hy and clojure are not
+https://www.appservgrid.com/hyper/hyp/lisp
+yeah, we're not implementing this, since this is a case preserving reader
+half the use cases in common lisp are not relevant, and identifiers containing whitespace are
+ING EVIL because almost no other languages can deal with them AND implementing a reader
+than can deal with them is a pain. This reader does quite a few start and end things already
+but I think we're going to leave pipes out for now since they fundamentally change how
+symbols are read and force you to throw certain valuable simplifying assumptions out the window
+
+| tok tos | bos  | q    | i    | h    | x    | f    | t    | l    | d    | a    | k    | v | s  | c | e        | o  | r  | m       |
+|---------+------+------+------+------+------+------+------+------+------+------+------+---+----+---+----------+----+----+---------|
+| newline | ~    | ~    | ~    | !    | ~    | !    | ~    | ~    | ~    | ^    | ^    | + | +  | ^ | +        | +  | +< | +[fn:1] |
+| "       | >s   | >s   | >s   | +>s  | >s   | !    | >s   | >s   | >s   | ^>s  | ^>s  | + | ^  | + | +        | +  | +< | !       |
+| )       | !    | !    | !    | !    | !    | !    | ^    | !    | !    | ^?<t | ^?<t | + | +  | + | +        | +  | +< | +[fn:1] |
+| ]       | !    | !    | !    | !    | !    | !    | !    | ^    | !    | ^?<l | ^?<l | + | +  | + | +        | +  | +< | +[fn:1] |
+| }       | !    | !    | !    | !    | !    | !    | !    | !    | ^    | ^?<d | ^?<d | + | +  | + | +        | +  | +< | +       |
+| (       | >t   | >t   | >t   | >t   | >t   | >t   | >t   | >t   | >t   | ^>t  | ^>t  | + | +  | + | +        | +  | +< | +       |
+| [       | >l   | >l   | >l   | >l   | >l   | >l   | >l   | >l   | >l   | ^>l  | ^>l  | + | +  | + | +        | +  | +< | +       |
+| {       | >d   | >d   | >d   | >?   | >d   | >d   | >d   | >d   | >d   | ^>d  | ^>d  | + | +  | + | +        | +  | +< | +       |
+| ;       | >c   | >c   | >c   | ^>x  | >c   | !    | >c   | >c   | >c   | ^>c  | ^>c  | + | +  | + | +        | +  | +< | +[fn:1] |
+| _       |      |      |      | ^>x  |      | >a+  |      |      |      |      |      |   |    |   |          | +  | +< |         |
+| - or +  |      |      |      | ^>f+ |      | >a+  |      |      |      |      |      |   |    |   |          | +  | +< |         |
+| '       | >q   | >q   | >q   | >q   | >q   | !    | >q   | >q   | >q   | ^>q  | ^>q  | + | +  | + | +        | +  | +< | +       |
+| `       | >i   | >i   | >i   | >i   | >i   | !    | >i   | >i   | >i   | ^>i  | ^>i  | + | +  | + | +        | +  | +< | +       |
+| ,       |      |      |      |      |      |      |      |      |      |      |      |   |    |   |          |    |    |         |
+| @       |      |      |      |      |      |      |      |      |      |      |      |   |    |   |          |    |    |         |
+| wsnn    | ~    | ~    | ~    | !?   | ~    | !    | ~    | ~    | ~    | ^    | ^    | + | +  | + | +        | +  | +< | +[fn:1] |
+| rest    | >a+  | >a+  | >a+  | >a+  | >a+  | >a+  | >a+  | >a+  | >a+  | +    | +    | + | +  | + | +        | +  | +< | +[fn:1] |
+| :       | >k+  | >+k  | >+k  | >k   | >+k  | >k+  | >k+  | >k+  | >k+  | +    | +    | + | +  | + | + or >k+ | +  | +< | +       |
+| \       | >e   | >e   | >e   | >e   | >e   | >e   | >e   | >e   | >e   | >e   | >e   | + | >e | + | +        | +  | +< | >e      |
+| ?       | >m   | >m   |      |      |      |      |      |      |      |      |      |   |    |   |          |    |    | +       |
+| #       | >h   | >h   | >h   | !    | >h   | !    | >h   | >h   | >h   | +    | +    | + | +  | + | +        | h  | ^^ | +       |
+| pipe    | >a>v | >a>v | >a>v | o    | >a>v | >a>v | >a>v | >a>v | >a>v | >v   | >v   | ^ | +  | + | +        | >r | +< | +       |
+
+
+[fn:1] The elisp reader handles these correctly, but the syntax propertization and fontification are extremely confused.
+While we're here, also note that characters are self evaluating literals in elisp (and most other dialects).
+
+elisp charachter syntax is a nightmare because it is completely
+irregular and can "unread" things and has countless special case as a
+result, just reading read_escape is painful here is an attempt to make
+it possible to read elisp files without having to deal with that and
+still correctly handle non-terminal cases
+
+Consider the insanity of ~?\C-?a~ vs ~?\c?a~ and then throw in
+~?a?b?\C-d?e~ for good measure. Or even better ~?a?b?\C-??d~ and
+~?a?b?\C-\M-??d~. Finally ~?\C-\C-?~. How many states do we need
+to add for this?
+
+
+pops
+| tok tos | t   | l   | q    | a    | k    | s   | c   | pop done state   | tok tok | h    | x    | f    |
+|---------+-----+-----+------+------+------+-----+-----+------------------+---------+------+------+------|
+| wsnn    |     |     | ^/   | ^/   | ^/   |     |     | dos              | wsnn    | ^/   | ^/   | ^/   |
+| newline |     |     | ^/   | ^/   | ^/   |     | ^/v | depends on start | newline | ^/   | ^/   | ^/   |
+| )       | ^/v | !   | ^/<? | ^/<? | ^/<? |     |     | t                | )       | ^/<? | ^/<? | ^/<? |
+| ]       | !   | ^/v | ^/<? | ^/<? | ^/<? |     |     | l                | ]       | ^/<? | ^/<? | ^/<? |
+|---------+-----+-----+------+------+------+-----+-----+------------------+---------+------+------+------|
+| "       |     |     |      | ^/>s | ^/>s | ^/v |     |                  | "       |      |      |      |
+| (       |     |     |      | ^/>t | ^/>t |     |     |                  | (       |      |      |      |
+| [       |     |     |      | ^/>l | ^/>l |     |     |                  | [       |      |      |      |
+| ;       |     |     |      | ^/>c | ^/>c |     |     |                  | ;       |      |      |      |
+| '       |     |     |      | ^/>q | ^/>q |     |     |                  | '       |      |      |      |
+| #       |     |     |      |      |      |     |     |                  |         | ???  |      |      |
+| eof     |     |     | ^    |      |      |     |     |                  | eof     |      |      |      |
+
+
+
+2nd transition for closing paren
+| ) stack[-2] stack[-1] | a | <?  | action | -3 must or errro |
+|-----------------------+---+-----+--------+------------------|
+| q                     | ^ | q   | ^      | t                |
+| t                     | ^ | t   | ^ end  | anything         |
+| l                     | ^ | l   |        | erro             |
+| bos                   | ^ | bos |        |                  |
+|                       |   |     |        |                  |
+
+| state |           |
+|-------+-----------|
+| s     | immediate |
+| a     | bos q t l |
+| c     | immediate |
+| k     | bos q t l |
+| q     | bos q t l |
+| t     | bos q t l |
+| l     |           |
+| bos   |           |
+
+
+TODO numbers :/ or maybe we just ast.literal eval them and get what we get?
+I'm not entirely certain how consistent the number literals are across implementations.
+
+have to have t and l because they have to be matched.
+
+DONE need to ban curly braces from the top level
+
+in this parser there isn't really an eof
+| eof     | ^      | ^  | ^  | ^ | ! | !  | ^ | !        |
+
+
+reordered subset for bos t l
+ | tok tos | bos   | t     | l     | iq  |
+ |---------+-------+-------+-------+-----|
+ | newline | ~     | ~     | ~     | ~   |
+ | wsnn    | ~     | ~     | ~     | ~   |
+ | "       | >s    | >s    | >s    | >s  |
+ | (       | >t    | >t    | >t    | >t  |
+ | [       | >l    | >l    | >l    | >l  |
+ | ;       | >c    | >c    | >c    | >c  |
+ | '       | >q>iq | >q>iq | >q>iq | ^   |
+ | rest    | >a+   | >a+   | >a+   | >a+ |
+ |---------+-------+-------+-------+-----|
+ | )       | !     | ^     | !     | !   |
+ | ]       | !     | !     | ^     | !   |
+ | {       | !     | !     | !     | !   |
+ | }       | !     | !     | !     | !   |
+ | :       | >k+   | >k+   | >k+   | >k+ |
+ | \       | >e    | >e    | >e    | >e  |
+
+
+states
+
+bqqqa
+we end pushing to the stack with a+ then we hit eof or space
+a^/<q^?+/<q^?+/<q^?+/<b/y
+we pop and cut from a but how does the next q get it repeatedly?
+cut is separate from the incorporate command aka +
+
+bttqqk
+end with k+
+k^/<q^?+/<q^?+
+it seems like ? is stable and it is always the thing that was most recently cut
+separate from the other stack
+
+btlqk

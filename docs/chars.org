@@ -1,0 +1,853 @@
+#+title: chars
+
+This is fine.
+
+Don't let the etymology fool you, the word char has nothing to do with
+strings of characters in the context of lisp readers. It is the verb
+that most accurately describes what trying to implement character
+literals will do to a developers mind.
+
+# Burn it all down to the ground and start over. Itsa disaster.
+There is no consistent behavior to be found here. Racket is way ahead,
+and I wonder whether it would be possible to bring the rest of the
+implementations in all the other dialects up to speed. I don't see any
+reason why it would cause an issue since most of the issues here are
+
+=At this point the author went to investigate more deeply=.
+
+Despair. The behavior for most dialects is clearly specified and
+cannot be changed, but are also straight forward to parse. The
+behavior for Emacs Lisp on the other hand is not remotely trivial to
+fix. I think the best we could hope for is the requirement to escape
+special characters if they are used in =?\C-= forms. The problem is
+that Emacs char syntax is _entirely_ special cases. Fortunately it
+seems that there isn't a risk of ambiguity because those cases will
+produce read errors, so in theory it would be possible to remove the
+special cases from the reader and move them to the second layer.  For
+example =(\\[A-Za-z]-)+[^,'`?() \t\n]= could work, probably with a few
+other terminal chars excluded. Those special chars would have to be
+escaped. But then there is =?\^=, which needs a special case to eat
+the next char as well. AND THEN there is =?\N{A CHAR NAME}=. There are
+more states that would have to be added to the parser to handle all of
+these cases than there are for parsing basic sexps.
+
+* Manual Results
+#+macro: e
+#((((((((((((
+#+name: char-reader-errors
+| pat ?    | pat ?\    | pat #\ \  | rr      | gu      | ga      | el uesc | el esc  | sbcl    | clj     |
+|----------+-----------+-----------+---------+---------+---------+---------+---------+---------+---------|
+| ?{ws}    | ?\{ws}    | #\{ws}    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ?;       | ?\;       | #\;       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ?)       | ?\)       | #\)       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ?a       | ?\a       | #\a       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ?  a     | ?\  a     | #\  a     | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ?  'a    | ?\  'a    | #\  'a    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ?) a     | ?\) a     | #\) a     | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| ? 'a     | ?\ 'a     | #\ 'a     | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
+| ?)'a     | ?\)'a     | #\)'a     | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
+| ? a      | ?\ a      | #\ a      | ok      | ok      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} |
+| ?;a      | ?\;a      | #\;a      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| ?)a      | ?\)a      | #\)a      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| ?'a      | ?\'a      | #\'a      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| ?aa      | ?\'a      | #\aa      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| ?a?b     | ?\a?\b    | #\a#\b    | ok      | {{{e}}} | {{{e}}} | ok      | ok      | {{{e}}} | ok      |
+| ?newline | ?\newline | #\newline | ok      | ok      | ok      | {{{e}}} | {{{e}}} | ok      | ok      |
+|----------+-----------+-----------+---------+---------+---------+---------+---------+---------+---------|
+
+# FIXME the whitespace table is inaccurate based on using (eval (read "?\ "))
+Note that in elisp ~?\n~ is newline and ~?\n != ?n~ unlike for other
+chars that do not participate in an escape sequence. So in a sense
+elisp is doing the opposite. You should always use ~?\~ unless you
+need an unescaped escape charachter in which case you should use ~?n~
+or similar. This avoids the need to have two separate representations
+for things like ~#\newline~ but is otherwise confusing. Everyone
+besides elisp can't do this because they implicitly escape by default
+due to the fact that the backslash is always present and ~#\\~ isn't
+just an escape sequence.
+
+#+begin_src elisp :var table=char-reader-errors :results pp
+(mapcar (lambda (s) (substring s 1)) (cdr (mapcar #'car table)))
+#+end_src
+
+#+RESULTS:
+: ("{ws}" ";" ")" "a" "  a" "  'a" ") a" " 'a" ")'a" " a" ";a" ")a" "'a" "aa" "a?b" "newline")
+
+Wrapping the test cases in parens simplifies reading since it ensures
+that there is only a single expression. Note however that this may
+have ever so slightly different behavior than reading multiple top
+level expressions.
+
+* Tests
+** Setup
+#+name: make-tests
+#+begin_src elisp :lexical t :results pp
+(setq-local test-suffixes
+            '(
+              " "
+              ";"
+              ")"
+              "a"
+              "  a"
+              "  'a"
+              ") a"
+              " 'a"
+              ")'a"
+              " a"
+              ";a"
+              ")a"
+              "'a"
+              "aa"
+              ("a" "b")
+              "newline"
+              ))
+
+(defun make-test (char-marker)
+  (lambda (s) (if (listp s)
+                  (concat "(" (string-join (mapcar (lambda (ss) (concat char-marker ss)) s)) ")")
+                (concat "(" char-marker s ")"))))
+
+(list
+ (mapcar (make-test "?") test-suffixes)
+ (mapcar (make-test "?\\") test-suffixes)
+ (mapcar (make-test "#\\") test-suffixes)
+ (mapcar (make-test "\\") test-suffixes)
+ )
+#+end_src
+
+#+RESULTS: make-tests
+ 
+** Results
+*** Emacs Lisp
+See [[info:elisp#Basic Char Syntax]]
+# https://www.gnu.org/software/emacs/manual/html_node/elisp/Basic-Char-Syntax.html
+
+[[file:/usr/share/emacs/28.0.50/src/lread.c::read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)]]
+
+See ~case '?':~. The comment there seems to be out of sync with the actual behavior?
+
+#+name: test-elisp-unesc
+#+begin_src elisp :var values=make-tests()
+(defun read-test (s)
+  (condition-case nil
+      (format "ok  %S %S" s (read s))
+    (error (format "err %S" s))))
+(mapcar #'list (mapcar #'read-test (car values)))
+#+end_src
+
+#+RESULTS: test-elisp-unesc
+| ok  "(? )" (32)       |
+| ok  "(?;)" (59)       |
+| ok  "(?))" (41)       |
+| ok  "(?a)" (97)       |
+| ok  "(?  a)" (32 a)   |
+| ok  "(?  'a)" (32 'a) |
+| ok  "(?) a)" (41 a)   |
+| ok  "(? 'a)" (32 'a)  |
+| ok  "(?)'a)" (41 'a)  |
+| ok  "(? a)" (32 a)    |
+| err "(?;a)"           |
+| err "(?)a)"           |
+| err "(?'a)"           |
+| err "(?aa)"           |
+| ok  "(?a?b)" (97 98)  |
+| err "(?newline)"      |
+
+#+name: test-elisp-esc
+#+begin_src elisp :var values=make-tests()
+(mapcar #'list (mapcar #'read-test (cadr values)))
+#+end_src
+
+#+RESULTS: test-elisp-esc
+| ok  "(?\\ )" (32)       |
+| ok  "(?\\;)" (59)       |
+| ok  "(?\\))" (41)       |
+| ok  "(?\\a)" (7)        |
+| ok  "(?\\  a)" (32 a)   |
+| ok  "(?\\  'a)" (32 'a) |
+| ok  "(?\\) a)" (41 a)   |
+| ok  "(?\\ 'a)" (32 'a)  |
+| ok  "(?\\)'a)" (41 'a)  |
+| err "(?\\ a)"           |
+| err "(?\\;a)"           |
+| err "(?\\)a)"           |
+| err "(?\\'a)"           |
+| err "(?\\aa)"           |
+| ok  "(?\\a?\\b)" (7 8)  |
+| err "(?\\newline)"      |
+
+**** BUT WAIT! There's MORE!
+So you thought you understood how to read chars? Hah! ~?\M-C~ and
+~?\M-\C-a~ are both valid chars in elisp but they aren't just chars,
+they are chars defined by key combinations! This means that you have
+to extend the reader to handle the escapes correctly! Also =M= and =C=
+are escape command chars.
+
+Oh dear. Then there is ~?\N{...}~ ~?\N{BOX DRAWINGS LIGHT VERTICAL}~
+syntax. Which is kind of like cl with ~#\BOX_DRAWINGS_LIGHT_VERTICAL~
+but with braces. https://www.youtube.com/watch?v=P-3GOo_nWoc
+*** Common Lisp
+To quote from cltl2 section 2.2
+
+#+begin_quote
+A character object can be notated by writing ~#\~ followed by the
+character itself. For example, ~#\g~ means the character object for a
+lowercase g. This works well enough for printing
+characters. Non-printing characters have names, and can be notated by
+writing ~#\~ and then the name; for example, ~#\Space~ (or ~#\SPACE~
+or ~#\space~ or ~#\sPaCE~) means the space character. The syntax for
+character names after ~#\~ is the same as that for symbols. However,
+only character names that are known to the particular implementation
+may be used.
+#+end_quote
+
+There is of course the implicit and unmentioned edge-case which is
+that the first character of the string is implicitly escaped, so you
+should not double escape it. All subsequent chars may be escaped as
+usual in a symbol.
+
+#+name: test-cl
+#+begin_src lisp :var values=make-tests()
+(defun read-test (s)
+ ;; why can't we ignore reader errors ???
+  (let ((res (ignore-errors (format nil "ok  ~s ~s" s (read-from-string s)))))
+    (if res
+        res
+        (format nil "err ~s" s))))
+(mapcar #'list (mapcar #'read-test (caddr values)))
+#+end_src
+# (((
+#+RESULTS: test-cl
+| ok  "(#\\ )" (#\ )             |
+| ok  "(#\\;)" (#\;)             |
+| ok  "(#\\))" (#\))             |
+| ok  "(#\\a)" (#\a)             |
+| ok  "(#\\  a)" (#\  A)         |
+| ok  "(#\\  'a)" (#\  'A)       |
+| ok  "(#\\) a)" (#\) A)         |
+| ok  "(#\\ 'a)" (#\  'A)        |
+| ok  "(#\\)'a)" (#\) 'A)        |
+| err "(#\\ a)"                  |
+| err "(#\\;a)"                  |
+| err "(#\\)a)"                  |
+| err "(#\\'a)"                  |
+| err "(#\\aa)"                  |
+| err "(#\\a#\\b)"               |
+| ok  "(#\\newline)" (#\Newline) |
+*** Clojure
+ob-clojure is broken +when accepting input values+ in general for this
+like, badly broken, it doesn't accept input values correctly, it can't
+return strings etc. etc. ~ob-clojure-string-or-list~ broken arrayp error
+or something when trying to format the resulting table, drawer and pp are ok.
+ob-clojure doesn't implicitly quote incoming lists
+# maybe had to do with wierdness of :results pp on the original block? nope, ob-clojure is just broken
+# :var values=make-tests()
+# #+begin_src clojure :noweb yes :results pp :wrap "src elisp :prologue \"'\"\n'"
+#+name: test-clojure-start
+#+begin_src clojure :noweb yes :results pp :wrap "src elisp \n'"
+(def values ' ;; if this newline is not here then you get repeated def values
+<<make-tests()>>)
+(defn read-test [s]
+  (try (format "ok  %s %s" s (read-string s))
+       (catch Exception e (format "err %s" s))))
+(map list (map read-test (nth values 3)))
+#+end_src
+
+#+name: test-clojure
+#+RESULTS: test-clojure-start
+#+begin_src elisp 
+'
+(("ok  (\\ ) (\\space)")
+ ("ok  (\\;) (\\;)")
+ ("ok  (\\)) (\\))")
+ ("ok  (\\a) (\\a)")
+ ("ok  (\\  a) (\\space a)")
+ ("ok  (\\  'a) (\\space (quote a))")
+ ("ok  (\\) a) (\\) a)")
+ ("err (\\ 'a)")
+ ("err (\\)'a)")
+ ("err (\\ a)")
+ ("err (\\;a)")
+ ("err (\\)a)")
+ ("err (\\'a)")
+ ("err (\\aa)")
+ ("ok  (\\a\\b) (\\a \\b)")
+ ("ok  (\\newline) (\\newline)"))
+
+#+end_src
+# ((((((
+#+RESULTS: test-clojure
+| ok  (\ ) (\space)              |
+| ok  (\;) (\;)                  |
+| ok  (\)) (\))                  |
+| ok  (\a) (\a)                  |
+| ok  (\  a) (\space a)          |
+| ok  (\  'a) (\space (quote a)) |
+| ok  (\) a) (\) a)              |
+| err (\ 'a)                     |
+| err (\)'a)                     |
+| err (\ a)                      |
+| err (\;a)                      |
+| err (\)a)                      |
+| err (\'a)                      |
+| err (\aa)                      |
+| ok  (\a\b) (\a \b)             |
+| ok  (\newline) (\newline)      |
+
+**** COMMENT Extras                                                :noexport:
+Why does this feel way harder than it needs to ...
+Oh right, since we are just calling read just
+wrap it in parens. Duh.
+#+begin_src clojure
+;;(def values '("(\\ )" "(\\;)" "(\\))" "(\\a)" "(\\  a)" "(\\  'a)" "(\\) a)" "(\\ 'a)" "(\\)'a)" "(\\ a)" "(\\;a)" "(\\)a)" "(\\'a)" "(\\aa)" "(\\a\\b)" "(\\newline)"))
+
+(defn string->stream
+  ([s] (string->stream s "UTF-8"))
+  ([s encoding]
+   (-> s
+       (.getBytes encoding)
+       (java.io.ByteArrayInputStream.))))
+
+(defn test-char-lit [s]
+  (slurp (as-file s)))
+(read-string s)  ; FIXME not right because it only reads one expression
+#+end_src
+See note about ~clojure.edn/read~ in https://clojuredocs.org/clojure.core/read.
+*** Racket
+[[file:~/git/NOFORK/racket/racket/src/io/print/char.rkt]]
+[[file:~/git/NOFORK/racket/racket/src/expander/read/char.rkt]]
+
+It looks like racket is using ~char-alphabetic?~ as the switch
+for when to terminate.
+
+# don't look too too closely at these until we are done
+# [[file:~/git/NOFORK/racket/racket/src/ChezScheme/s/read.ss]]
+
+# reminder, the reason why you need :lang for racket is
+# if you want to be able to tangle and executle a sub block
+# this might work with prologue or whatever since prologue is
+# not tangled but is specific to a single block
+# the other reason you need it is in cases where you have some
+# variant lang and you have to know that information before you
+# can call into the racket backend
+#+name: test-racket
+#+begin_src racket :noweb yes :lang racket/base
+(define values '
+  <<make-tests()>>)
+
+;(define (test-char-lit s) (port->list read (open-input-string s)))
+
+(define (read-test s)
+  (with-handlers ([exn:fail?
+                   (lambda (exn)
+                     (format "err ~s" s))])
+    (format "ok  ~s ~s" s (read (open-input-string s)))))
+
+(map list (map read-test (caddr values)))
+#+end_src
+# ((((
+#+RESULTS: test-racket
+| ok  "(#\\ )" (#\space)              |
+| ok  "(#\\;)" (#\;)                  |
+| ok  "(#\\))" (#\))                  |
+| ok  "(#\\a)" (#\a)                  |
+| ok  "(#\\  a)" (#\space a)          |
+| ok  "(#\\  'a)" (#\space (quote a)) |
+| ok  "(#\\) a)" (#\) a)              |
+| ok  "(#\\ 'a)" (#\space (quote a))  |
+| ok  "(#\\)'a)" (#\) (quote a))      |
+| ok  "(#\\ a)" (#\space a)           |
+| ok  "(#\\;a)" (#\; a)               |
+| ok  "(#\\)a)" (#\) a)               |
+| ok  "(#\\'a)" (#\' a)               |
+| err "(#\\aa)"                       |
+| ok  "(#\\a#\\b)" (#\a #\b)          |
+| ok  "(#\\newline)" (#\newline)      |
+
+* Manual Tests
+** clj
+#+begin_src clojure
+'(\a\b\c)
+#+end_src
+
+#+RESULTS:
+: (\a \b \c)
+
+#+begin_src clojure
+'(
+\
+
+)
+#+end_src
+
+#+RESULTS:
+: (\newline)
+
+# ob-clojure error
+#+begin_src clojure :var a='b
+\  a
+#+end_src
+
+#+RESULTS:
+: class clojure.lang.Compiler$CompilerException
+
+#+begin_src clojure :var a='b
+\ a
+#+end_src
+
+#+RESULTS:
+: class java.lang.RuntimeException
+
+#+begin_src clojure
+\ 1
+#+end_src
+
+#+RESULTS:
+: class java.lang.RuntimeException
+
+#+begin_src clojure
+\ 'a
+#+end_src
+
+#+RESULTS:
+| class java.lang.RuntimeException |
+| a                                |
+
+# FIXME ob clojure is broken
+#+begin_src clojure
+\  'a
+#+end_src
+
+#+RESULTS:
+| class java.lang.RuntimeException |
+| a                                |
+
+#+begin_src clojure
+\ `a
+#+end_src
+
+#+RESULTS:
+| class java.lang.RuntimeException |
+| user/a                           |
+
+#+begin_src clojure
+'(\ )
+#+end_src
+
+#+RESULTS:
+: (\space)
+
+# ((
+#+begin_src clojure
+'(\))
+#+end_src
+#+RESULTS:
+: (\))
+
+#+begin_src clojure
+\`1
+#+end_src
+
+#+RESULTS:
+: class java.lang.RuntimeException
+
+#+begin_src clojure
+\`'a
+#+end_src
+
+#+RESULTS:
+| \` |
+| a  |
+
+*** bugs in ob-clojure
+#+begin_src clojure
+\ 
+#+end_src
+
+#+RESULTS:
+: (\space)
+
+** hy
+Not applicable. Python only has strings.
+** racket
+#+begin_src racket :lang racket/base
+(list #\a#\b#\c)
+#+end_src
+
+#+RESULTS:
+: '(#\a #\b #\c)
+
+#+begin_src racket :lang racket/base
+#\ 
+#+end_src
+
+#+RESULTS:
+: #\space
+
+# FIXME :var a='b is broken ???!
+#+begin_src racket :lang racket/base
+(define a 'b)
+#\ a
+#+end_src
+
+#+RESULTS:
+: #\space
+: 'b
+
+#+begin_src racket :lang racket/base
+#\ 1
+#+end_src
+#+begin_src racket :lang racket/base
+#\
+1
+#+end_src
+
+#+RESULTS:
+: #\newline
+: 1
+
+#+begin_src racket :lang racket/base
+(define a 'b)
+#\,a
+#+end_src
+
+#+RESULTS:
+: #\,
+: 'b
+
+#+begin_src racket :lang racket/base
+(define a 'b)
+#\'a
+#+end_src
+
+#+RESULTS:
+: #\'
+: 'b
+
+#+begin_src racket :lang racket/base
+(define a 'b)
+#\`a 
+#+end_src
+
+#+RESULTS:
+: #\`
+: 'b
+
+#+begin_src racket :lang racket/base
+(define a 'b)
+#\'a
+#+end_src
+
+#+RESULTS:
+: #\'
+: 'b
+
+#+begin_src racket :lang racket/base :eval never
+(define a 'b)
+#\aa
+#+end_src
+** scheme
+*** guile
+#+begin_src elisp
+(setq-local geiser-scheme-implementation 'guile)
+#+end_src
+
+#+begin_src scheme :results output :eval never
+(list #\a#\b#\c)
+#+end_src
+
+#+RESULTS:
+: Throw to key `read-error' while reading argument `form' of command `geiser-eval':
+: In procedure scm_lreadr: #<unknown port>:5:16: unknown character name a#\b#\c
+: While reading expression:
+: In procedure read_inner_expression: #<unknown port>:5:17: unexpected ")"
+: scheme@(guile-user)> 
+
+#+begin_src scheme
+#\ 
+#+end_src
+
+#+RESULTS:
+: #\space
+
+#+begin_src scheme :var a='b
+#\ a
+#+end_src
+
+#+RESULTS:
+: b
+
+#+begin_src scheme :results output :var a='b
+#\,a
+#+end_src
+
+#+RESULTS:
+: Throw to key `read-error' while reading argument `form' of command `geiser-eval':
+: In procedure scm_lreadr: #<unknown port>:6:5: unknown character name ,a
+: While reading expression:
+: In procedure read_inner_expression: #<unknown port>:7:2: unexpected ")"
+: scheme@(guile-user)> 
+
+#+begin_src scheme :results output :var a='b
+#\'a
+#+end_src
+
+#+RESULTS:
+: Throw to key `read-error' while reading argument `form' of command `geiser-eval':
+: In procedure scm_lreadr: #<unknown port>:6:5: unknown character name 'a
+: While reading expression:
+: In procedure read_inner_expression: #<unknown port>:7:2: unexpected ")"
+: scheme@(guile-user)> 
+
+#+begin_src scheme :results output :var a='b
+#\`a
+#+end_src
+
+#+RESULTS:
+: Throw to key `read-error' while reading argument `form' of command `geiser-eval':
+: In procedure scm_lreadr: #<unknown port>:6:5: unknown character name `a
+: While reading expression:
+: In procedure read_inner_expression: #<unknown port>:7:2: unexpected ")"
+: scheme@(guile-user)> 
+
+#+begin_src scheme :results output :var a='b
+#\aa
+#+end_src
+
+#+RESULTS:
+: Throw to key `read-error' while reading argument `form' of command `geiser-eval':
+: In procedure scm_lreadr: #<unknown port>:6:5: unknown character name aa
+: While reading expression:
+: In procedure read_inner_expression: #<unknown port>:7:2: unexpected ")"
+: scheme@(guile-user)> 
+
+*** gambit
+#+begin_src elisp
+(setq-local geiser-scheme-implementation 'gambit)
+#+end_src
+
+#+begin_src scheme :results output :eval never
+(list #\a#\b#\c)
+#+end_src
+
+#+RESULTS:
+: *** ERROR IN (stdin)@2.7 -- Invalid '#\' name: "a#"
+: > 
+
+#+begin_src scheme
+#\ 
+#+end_src
+
+#+RESULTS:
+: #\space
+
+#+begin_src scheme
+#\
+
+#+end_src
+
+#+RESULTS:
+: #\newline
+
+#+begin_src scheme :var a='b
+#\ a
+#+end_src
+
+#+RESULTS:
+: b
+
+#+begin_src scheme :results output :var a='b
+#\,a
+#+end_src
+
+#+RESULTS:
+: *** ERROR IN (stdin)@3.1 -- Invalid '#\' name: ",a"
+: > 
+
+#+begin_src scheme :results output :var a='b
+#\'a
+#+end_src
+
+#+RESULTS:
+: *** ERROR IN (stdin)@3.1 -- Invalid '#\' name: "'a"
+: > 
+
+#+begin_src scheme :results output :var a='b
+#\`a
+#+end_src
+
+#+RESULTS:
+: *** ERROR IN (stdin)@3.1 -- Invalid '#\' name: "`a"
+: > 
+
+#+begin_src scheme :results output :var a='b
+#\aa
+#+end_src
+
+#+RESULTS:
+: *** ERROR IN (stdin)@3.1 -- Invalid '#\' name: "aa"
+: > 
+
+** cl
+#+begin_src lisp :eval never
+'(#\a#\b#\c)
+#+end_src
+
+#+begin_src lisp
+#\
+
+#+end_src
+
+#+RESULTS:
+: #\Newline
+
+#+begin_src lisp
+#\a
+#+end_src
+
+#+RESULTS:
+: #\a
+
+#+begin_src lisp :var a='b :eval never
+#\ a
+#+end_src
+#+begin_src lisp :var a='b
+#\  a
+#+end_src
+
+#+RESULTS:
+: B
+
+#+begin_src lisp
+#\  'a
+#+end_src
+
+#+RESULTS:
+: A
+
+#+begin_src lisp
+#\ 'a
+#+end_src
+
+#+RESULTS:
+: A
+
+#+begin_src lisp :var a='b :eval never
+#\'a
+#+end_src
+#+begin_src lisp :eval never
+#\aa
+#+end_src
+# ((
+#+begin_src lisp
+#\)
+#+end_src
+#+RESULTS:
+: #\)
+
+# (
+#+begin_src lisp :var a='b :eval never
+#\)a
+#+end_src
+
+# (
+#+begin_src lisp :var a='b
+#\) a
+#+end_src
+
+#+RESULTS:
+: B
+
+#+begin_src lisp
+#\'a
+,#+end_src
+
+,#+RESULTS):
+: A
+
+,#+begin_src lisp :eval never
+#\a#\b
+#+end_src
+#+begin_src lisp
+#\;
+#+end_src
+
+#+RESULTS:
+: #\;
+
+#+begin_src lisp :var a='b :eval never
+#\;a
+#+end_src
+#+begin_src lisp
+#\newline
+#+end_src
+
+#+RESULTS:
+: #\Newline
+
+** elisp
+#+begin_src elisp
+(list ?a?b?c)
+#+end_src
+
+#+RESULTS:
+| 97 | 98 | 99 |
+
+#+begin_src elisp
+?a
+#+end_src
+
+#+RESULTS:
+: 97
+
+#+begin_src elisp :eval never
+?aa
+#+end_src
+
+#+begin_src elisp :var a='b
+? a 
+#+end_src
+
+#+RESULTS:
+: b
+
+#+begin_src elisp :eval never
+?,a 
+#+end_src
+
+
+Prepare for *WAT*.
+#+begin_src elisp
+?
+
+#+end_src
+
+#+RESULTS:
+: 10
+
+#+begin_src elisp
+?\
+
+#+end_src
+
+#+RESULTS:
+: -1
+
+More wat
+#+begin_src elisp
+'((?a?b)
+  (?\a?\b) ; oh right ... just like \n and \t \a and \b actually have escaped meaning oh boy that is an inhomognenous design right there wow
+  ; the real wat starts here with the self terminating chars
+  (?;?\;)
+  (?'?\')
+  (? ?\ )
+)
+#+end_src
+
+#+RESULTS:
+| 97 | 98 |
+|  7 |  8 |
+| 59 | 59 |
+| 39 | 39 |
+| 32 | 32 |
+
