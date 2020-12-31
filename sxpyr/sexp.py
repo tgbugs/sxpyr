@@ -447,41 +447,39 @@ def configure(_symbols=None,
 
     # XXX NOTE state could be defined globally but I think
     # keeping it in here will have better performance
-    states = [bos, a, k, q, u, u1, us, i, s, t, l, d, h, c, e, es, x, f, blk, r, v, nestblk, m, m1] = [
+    states = [bos, s_atom, s_keyw, s_quote, s_unquote, s_unq_first, s_unq_splice, s_quasiq,
+              s_string, s_list_p, s_list_s, s_list_c, s_sharp, s_comment_l,
+              s_esc, s_esc_str, s_comment_x, s_feat_x, s_comment_blk, s_pipe_in_comment_b, s_atom_verbatim, s_comment_b_nest, s_char, s_char_first] = [
         State(i) for i in range(24)]
-    esclikes = e, m
-    quotelikes = q, u, u1, us, i, x, f, h
-    listlikes = t, l, d, blk
-
-    # historical names
-    #n = nestblk
-    #o = blk  # as in blOck
+    esclikes = s_esc, s_char
+    quotelikes = s_quote, s_unquote, s_unq_first, s_unq_splice, s_quasiq, s_comment_x, s_feat_x, s_sharp
+    listlikes = s_list_p, s_list_s, s_list_c, s_comment_blk
 
     state_names = {
         bos: 'bos',
-        a: 'a',
-        k: 'k',
-        q: 'q',
-        u: 'u',
-        u1: 'u1',
-        us: 'us',
-        i: 'i',
-        s: 's',
-        t: 't',
-        l: 'l',
-        d: 'd',
-        h: 'h',
-        c: 'c',
-        e: 'e',
-        es: 'es',
-        x: 'x',
-        f: 'f',
-        blk: 'blk',
-        r: 'r',
-        v: 'v',
-        nestblk: 'nestblk',
-        m: 'm',
-        m1: 'm1',
+        s_atom: 'atom',
+        s_keyw: 'keyw',
+        s_quote: 'quot',
+        s_unquote: 'unqu',
+        s_unq_first: 'unqf',
+        s_unq_splice: 'unqs',
+        s_quasiq: 'qasi',
+        s_string: 'strn',
+        s_list_p: 'list',
+        s_list_s: 'vect',
+        s_list_c: 'dict',
+        s_sharp: 'shrp',
+        s_comment_l: 'comm',
+        s_esc: 'escp',
+        s_esc_str: 'sesc',
+        s_comment_x: 'xcom',
+        s_feat_x: 'feat',
+        s_comment_blk: 'cblk',
+        s_pipe_in_comment_b: 'mebl',  # maybe leave block comment
+        s_atom_verbatim: 'aver',
+        s_comment_b_nest: 'nblk',
+        s_char: 'char',
+        s_char_first: 'chrf',
     }
 
     State.state_names.update(state_names)
@@ -525,23 +523,23 @@ def configure(_symbols=None,
 
     def caste(state, collect):  # TODO start and end points
         # FIXME this second set of branches shouldn't be necessary?
-        if   state == s: val = caste_string(collect)
-        elif state == a: val = caste_atom(collect)
-        elif state == c: val = Comment(collect)
-        elif state == blk: val = BComment(collect)
-        elif state == k: val = caste_keyword(collect)
-        elif state == t: val = ListP(collect)
-        elif state == l: val = ListS(collect)
-        elif state == d: val = ListC(collect)
-        elif state == q: val = Quote.from_collect(collect)
-        elif state == i: val = IQuote.from_collect(collect)
-        elif state == u: val = UQuote.from_collect(collect)
-        elif state == us: val = SUQuote.from_collect(collect)
-        elif state == h: val = caste_sharp(collect)
-        elif state == x: val = XComment.from_collect(collect)
-        elif state == f: val = FeatureExpr.from_collect(collect)  # TODO override
-        elif state == v: val = caste_atom(collect)  # cl vs rr different behavior '|a \ b| '|a  b|
-        elif state in (m1, m): val = (EChar(collect)
+        if   state == s_string: val = caste_string(collect)
+        elif state == s_atom: val = caste_atom(collect)
+        elif state == s_comment_l: val = Comment(collect)
+        elif state == s_comment_blk: val = BComment(collect)
+        elif state == s_keyw: val = caste_keyword(collect)
+        elif state == s_list_p: val = ListP(collect)
+        elif state == s_list_s: val = ListS(collect)
+        elif state == s_list_c: val = ListC(collect)
+        elif state == s_quote: val = Quote.from_collect(collect)
+        elif state == s_quasiq: val = IQuote.from_collect(collect)
+        elif state == s_unquote: val = UQuote.from_collect(collect)
+        elif state == s_unq_splice: val = SUQuote.from_collect(collect)
+        elif state == s_sharp: val = caste_sharp(collect)
+        elif state == s_comment_x: val = XComment.from_collect(collect)
+        elif state == s_feat_x: val = FeatureExpr.from_collect(collect)  # TODO override
+        elif state == s_atom_verbatim: val = caste_atom(collect)  # cl vs rr different behavior '|a \ b| '|a  b|
+        elif state in (s_char_first, s_char): val = (EChar(collect)
                                       if [_ for _ in collect if isinstance(_, SEscape)] else
                                       Char(collect))
         # XXX if you hit this error with bos at eof DO NOT ADD bos here!
@@ -578,28 +576,28 @@ def configure(_symbols=None,
             collect_stack.append(_collect)
             return _collect
 
-        if   char == dq: collect = to_state_collect(s)
-        elif char == sc: collect = to_state_collect(c)
-        elif char == op: collect = to_state(t)
-        elif char == os: collect = to_state(l)
-        elif char == oc: collect = to_state(d)
-        elif char == sq: collect = to_state(q)
-        elif char == gr: collect = to_state(i)
-        elif char == cm: collect = to_state(u1)
-        elif char == pi: collect = to_state_collect(v)
+        if   char == dq: collect = to_state_collect(s_string)
+        elif char == sc: collect = to_state_collect(s_comment_l)
+        elif char == op: collect = to_state(s_list_p)
+        elif char == os: collect = to_state(s_list_s)
+        elif char == oc: collect = to_state(s_list_c)
+        elif char == sq: collect = to_state(s_quote)
+        elif char == gr: collect = to_state(s_quasiq)
+        elif char == cm: collect = to_state(s_unq_first)
+        elif char == pi: collect = to_state_collect(s_atom_verbatim)
         # XXX warning: this branch for pipe only works correctly if
         # collect is None
         elif char == ha:
             state = stack[-1]
-            if state == blk:  # FIXME do we really want to do this here
+            if state == s_comment_blk:  # FIXME do we really want to do this here
                 # it means that we didn't handle a case correctly in parse
-                stack.append(nestblk)  # FIXME maybe nest blk
+                stack.append(s_comment_b_nest)  # FIXME maybe nest s_comment_blk
             else:
-                collect = to_state(h)
+                collect = to_state(s_sharp)
         elif char == qm:
-            collect = to_state_collect(m1)
+            collect = to_state_collect(s_char_first)
         elif char == bss:
-            collect = to_state_collect(es)
+            collect = to_state_collect(s_esc_str)
         else:
             raise Exception('This should never happen.')
 
@@ -610,13 +608,13 @@ def configure(_symbols=None,
         state = stack[-1]
         *cut, = i_resolve_pops(collect_stack, stack, char)
 
-        if state == m1:  # FIXME using this to prevent issues with strings sigh
+        if state == s_char_first:  # FIXME using this to prevent issues with strings sigh
             collect = None
         elif (char in (op, os, oc, sq, gr, cm) or
-              state == m and char in (qm, ha) or  # and char_auto_end ??? chars may end chars ie not cl
-            char == dq and state != s):
+              state == s_char and char in (qm, ha) or  # and char_auto_end ??? chars may end chars ie not cl
+            char == dq and state != s_string):
             collect = push_state_from_char(collect_stack, collect, stack, char)
-        elif stack[-1] == blk:
+        elif stack[-1] == s_comment_blk:
             collect = collect_stack[-1]
             # a bit different from other listlikes because it is its own collector
             # in addition to a nested container for other block quotes
@@ -632,7 +630,7 @@ def configure(_symbols=None,
             print(f'CO: {collect_stack}')
             pass
         state_prev = stack.pop()  # pop ^
-        if (state_prev in (r,)):  # transition only no collect
+        if (state_prev in (s_pipe_in_comment_b,)):  # transition only no collect
             return i_resolve_pops(collect_stack, stack, char)
 
         # FIXME #\;a causes isses for a bunch of readers which
@@ -647,13 +645,13 @@ def configure(_symbols=None,
             char = None
 
         if char == eof:  # sigh using a branch for something that provably only happens once
-            if state_prev in (s, v, *listlikes):
+            if state_prev in (s_string, s_atom_verbatim, *listlikes):
                 # TODO unterminated x starting at position y
 
                 raise SyntaxError(f'Unterminated thing {state_prev}.')
 
             if (state != bos or #and state_prev in (c, m, a) or
-                state_prev == m1):
+                state_prev == s_char_first):
                 collect_stack[-1].append(cut)
                 return i_resolve_pops(collect_stack, stack, char)
 
@@ -661,7 +659,7 @@ def configure(_symbols=None,
 
         elif not collect_stack:
             return cut,
-        elif state_prev == c:
+        elif state_prev == s_comment_l:
             if state in (*quotelikes, *listlikes):
                 collect_stack[-1].append(cut)
                 return tuple()
@@ -670,17 +668,17 @@ def configure(_symbols=None,
         elif state in quotelikes:
             # FIXME make sure features eat twice?
             collect_stack[-1].append(cut)
-            if state_prev is x and state is x:
+            if state_prev is s_comment_x and state is s_comment_x:
                 # don't comment things that are already commented
                 # comment the thing that comes after them
                 # FIXME this gets very tricky with feature expressions
                 return tuple()
 
             return i_resolve_pops(collect_stack, stack, char)
-        elif char in (cp, cs, cc) and state_prev in (*quotelikes, a, k, m, m1):
+        elif char in (cp, cs, cc) and state_prev in (*quotelikes, s_atom, s_keyw, s_char, s_char_first):
             # multiple things end at the same time
             collect_stack[-1].append(cut)
-            if state_prev != m1:
+            if state_prev != s_char_first:
                 return i_resolve_pops(collect_stack, stack, char)
             else:
                 return tuple()
@@ -701,25 +699,25 @@ def configure(_symbols=None,
         if char in (cp, cs, cc): raise SyntaxError(f'# {char} not allowed.')
         elif char == pih:  # FIXME essentially things that we want to ignore right now
             stack.pop()
-            stack.append(blk)
+            stack.append(s_comment_blk)
             # FIXME need to update collect
             #collect_stack.pop()
             return True
         elif char == bs:
             stack.pop()
-            stack.append(m1)
+            stack.append(s_char_first)
             return True
         elif char in '_;':
             stack.pop()
             # do not need collect_stack
             # reuse the collect from h for x
-            stack.append(x)
+            stack.append(s_comment_x)
             return True
         elif char in '+-':
             stack.pop()
             # do not need collect_stack
             # reuse the collect from h for f
-            stack.append(f)
+            stack.append(s_feat_x)
             return True
 
 
@@ -760,58 +758,58 @@ def configure(_symbols=None,
                     print('cs:', char, stack)
                     pass
 
-                if state == u1:
+                if state == s_unq_first:
                     # FIXME can we integrate this into the main switch?
                     if char == at:
                         stack.pop()
-                        stack.append(us)
+                        stack.append(s_unq_splice)
                         continue
                     else:
                         stack.pop()
-                        stack.append(u)
-                        state = u
+                        stack.append(s_unquote)
+                        state = s_unquote
 
-                if state == h:
+                if state == s_sharp:
                     # make any transitions that are required,
                     # fail on failure cases, or proceed
                     # needs to come before escape due to #\
                     if process_h(collect_stack, stack, char):
-                        if stack[-1] in (blk, m1):
+                        if stack[-1] in (s_comment_blk, s_char_first):
                             collect = collect_stack[-1]  # FIXME h should be via push_state_from_char no?
                         continue
 
                 # handle escape
-                if state in (e, es):
+                if state in (s_esc, s_esc_str):
                     # escape is only needed for a single char
                     stack.pop()
                     # FIXME TODO add explicit Ast node for this
                     # so we can differentiate between the raw forms?
                     # yes, this is better than the alternative which
                     # is to hardcode escape rules into the reader
-                    if state == es:
+                    if state == s_esc_str:
                         #char = caste(state, char)  # TODO make homogenous
                         char = SEscape(char)
                         #breakpoint()
                     else:
                         char = Escape(char)
-                elif qm == '?' and state in (m1, m) and char == bs:  # FIXME HACK for elisp
-                    stack.append(es)  # NOTE elisp uses the same escape sequences for chars and strings
+                elif qm == '?' and state in (s_char_first, s_char) and char == bs:  # FIXME HACK for elisp
+                    stack.append(s_esc_str)  # NOTE elisp uses the same escape sequences for chars and strings
                     continue
-                elif state not in (c, blk, nestblk, m1) and char == bs:  # implicit not in (c, o, m1)
+                elif state not in (s_comment_l, s_comment_blk, s_comment_b_nest, s_char_first) and char == bs:  # implicit not in (c, o, m1)
                     # FIXME TODO need to split \ in string from the rest
-                    if state in (s, m):
-                        stack.append(es)
+                    if state in (s_string, s_char):
+                        stack.append(s_esc_str)
                     else:
-                        stack.append(e)
+                        stack.append(s_esc)
                     #breakpoint()  # XXX m debug start point
                     # FIXME interaction between m and e
                     continue
-                elif state == s and char == bss:
+                elif state == s_string and char == bss:
                     # FIXME we should be able to handle this homogenously
-                    stack.append(es)
+                    stack.append(s_esc_str)
                     continue
 
-                if state == m1:
+                if state == s_char_first:
                     if char in syms and char in m_ends:
                         collect.append(char)
                     else:
@@ -820,7 +818,7 @@ def configure(_symbols=None,
                         # block a bit simpler
                         stack.pop()
 
-                if state in (e, es) and stack[-1] == m1: # state == m or
+                if state in (s_esc, s_esc_str) and stack[-1] == s_char_first: # state == m or
                     # FIXME m and e have sligh issues here
                     # needs to be handled after e
                     # ideally we could fall through
@@ -835,7 +833,7 @@ def configure(_symbols=None,
 
                     if char not in syms or char not in m_ends:
                         stack.pop()
-                        stack.append(m)
+                        stack.append(s_char)
 
                     if char_auto_end and char in m_ends:
                         *thing, = i_resolve_pops(collect_stack, stack, char)
@@ -851,35 +849,35 @@ def configure(_symbols=None,
                     else:
                         continue   # FIXME ... not sure if this is right well it sorta works
 
-                if state == nestblk:
+                if state == s_comment_b_nest:
                     stack.pop()
                     if char == pih:
                         # FIXME sigh
-                        stack.append(blk)
+                        stack.append(s_comment_blk)
                         collect = []
                         collect_stack.append(collect)
                     else:
                         collect.append(pih)
 
-                elif state == blk and char == pih:
-                    stack.append(r)
+                elif state == s_comment_blk and char == pih:
+                    stack.append(s_pipe_in_comment_b)
 
                 # handle all the + cases except
                 elif (                     char not in syms or
-                    state in (a, k)    and char not in ak_ends and char != pi or  # TODO see if we actually need the state test here
-                    state in (m1, m)  and char not in m_ends or
+                    state in (s_atom, s_keyw)    and char not in ak_ends and char != pi or  # TODO see if we actually need the state test here
+                    state in (s_char_first, s_char)  and char not in m_ends or
                                            char == co or
-                    state != u1           and char == at or  # FIXME do we really need u1?
-                    state == h            and char == ha or  # FIXME should probably work like an FeaureExpr?
-                    state == v            and char != pi or
-                    state == r            and char != ha or
-                    state in (s, c, blk, e, es) and char not in scoe_complex or
-                    state in (s, c,      e, es) and char in (ha, pih) or
-                    state in (s,    blk, e, es) and char == nl or
-                    state in (   c, blk, e, es) and char     in (dq, bs) or
+                    state != s_unq_first           and char == at or  # FIXME do we really need u1?
+                    state == s_sharp            and char == ha or  # FIXME should probably work like an FeaureExpr?
+                    state == s_atom_verbatim            and char != pi or
+                    state == s_pipe_in_comment_b            and char != ha or
+                    state in (s_string, s_comment_l, s_comment_blk, s_esc, s_esc_str) and char not in scoe_complex or
+                    state in (s_string, s_comment_l,      s_esc, s_esc_str) and char in (ha, pih) or
+                    state in (s_string,    s_comment_blk, s_esc, s_esc_str) and char == nl or
+                    state in (   s_comment_l, s_comment_blk, s_esc, s_esc_str) and char     in (dq, bs) or
                     (qm == '?' and
                      # FIXME EEEEMMMMMAAAAAAAAAAAAACCCCCCSSSSSS
-                     state == m and
+                     state == s_char and
                      char in m_ends and
                      (collect[-1] == escape_hat or
                       collect[-1] == '-' and
@@ -892,18 +890,18 @@ def configure(_symbols=None,
                         # for another state so safe to assign state
                         # here, also required to handle the case where
                         # the loop immediately terminates
-                        state = k if char == co else a
+                        state = s_keyw if char == co else s_atom
                         stack.append(state)
                         collect = []
                         collect_stack.append(collect)
                         if point_start is None:
                             point_start = point
 
-                    if state == r and char != pih:
+                    if state == s_pipe_in_comment_b and char != pih:
                         stack.pop()
                         collect.append(pih)
-                    elif state == m1:
-                        stack.append(m)  # FIXME lurking transition
+                    elif state == s_char_first:
+                        stack.append(s_char)  # FIXME lurking transition
 
                     collect.append(char)
                     # FIXME if we are in state m and get here everything breaks
@@ -911,20 +909,20 @@ def configure(_symbols=None,
 
                 elif ((state in quotelikes or state == bos)
                                                     and char in (cp, cs, cc) or
-                    state == t                      and char in (    cs, cc) or
-                    state == l                      and char in (cp,     cc) or
-                    state == d                      and char in (cp, cs    )):
+                    state == s_list_p                      and char in (    cs, cc) or
+                    state == s_list_s                      and char in (cp,     cc) or
+                    state == s_list_c                      and char in (cp, cs    )):
                     raise SyntaxError('No matching paren!')
 
                 # majority of pops happen here
-                elif (state in (a, k) and char in ak_ends or
-                    state in (m1, m) and char in m_ends or
-                    state == t and char == cp or
-                    state == l and char == cs or
-                    state == d and char == cc or
-                    state == s and char == dq or
-                    state == c and char == nl or
-                    state == r and char == ha):
+                elif (state in (s_atom, s_keyw) and char in ak_ends or
+                    state in (s_char_first, s_char) and char in m_ends or
+                    state == s_list_p and char == cp or
+                    state == s_list_s and char == cs or
+                    state == s_list_c and char == cc or
+                    state == s_string and char == dq or
+                    state == s_comment_l and char == nl or
+                    state == s_pipe_in_comment_b and char == ha):
                     collect, *thing = resolve_pops(collect_stack, collect, stack, char)
                     yield from thing
                     # FIXME not sure if correct
@@ -938,21 +936,21 @@ def configure(_symbols=None,
                     # pi and ha are cases where we might or might not want/need to updated collect
                     # which is why they are sort of separate because we stopped passing collect
                     # through push_state_from_char
-                    if state == v:
+                    if state == s_atom_verbatim:
                         stack.pop()
                         state = stack[-1]
                     else:
                         # yep, just as complex as expected :/
-                        if state in listlikes or state in quotelikes or state in (a, k, bos):
+                        if state in listlikes or state in quotelikes or state in (s_atom, s_keyw, bos):
                             if collect is None:
-                                stack.append(a)  # : must come outside if you want a keyword
+                                stack.append(s_atom)  # : must come outside if you want a keyword
                                 collect = push_state_from_char(collect_stack, collect, stack, char)
                             else:
-                                stack.append(v)
+                                stack.append(s_atom_verbatim)
                         if point_start is None:
                             point_start = point
 
-                elif state == blk and char == ha:
+                elif state == s_comment_blk and char == ha:
                     push_state_from_char(collect_stack, collect, stack, char)
 
                 elif (state in listlikes or
