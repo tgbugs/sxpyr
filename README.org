@@ -2,8 +2,8 @@
 
 Parse s-expressions, edn, and a variety of lisp dialects.
 
-Currently supports something like the union of Common Lisp, Scheme,
-Racket, Clojure, Hy, and Emacs Lisp.
+Currently supports something approximating the union of Common Lisp,
+Scheme, Racket, Clojure, Hy, Fennel, and Emacs Lisp.
 
 This library is designed to be vendored for projects that want to
 avoid dependencies. It bears an MIT license and sxpyr.py can be
@@ -21,3 +21,10 @@ necessary to configure the reader in advance. This happens in cases
 where a particular form is valid in two different dialects and one
 or both parses are sufficiently divergent that it is not possible
 to recover the correct parse for the other dialect.
+
+At the moment the reader cannot be modified at runtime. This means
+that it cannot be used to parse named readtables or things like
+Racket's ~#lang at-exp~. In the future it might be possible to pass
+the generator through to the functions that handle dispatch macros and
+make it possible to register new reader macros, but that is well out
+of scope at the moment.
