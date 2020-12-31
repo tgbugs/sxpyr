@@ -23,8 +23,8 @@ from .sexp import (
     Sharp,
     FeatureExpr,)
 from .sexp import (
-    syms_cl,
-    syms_el,
-    syms_gui,
-    syms_clj,
-    syms_hy)
+    toks_cl,
+    toks_el,
+    toks_gui,
+    toks_clj,
+    toks_hy)

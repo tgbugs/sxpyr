@@ -1,20 +1,20 @@
 import sys
-from sxpyr import syms_cl, syms_el, syms_gui, syms_clj, syms_hy
+from sxpyr import toks_cl, toks_el, toks_gui, toks_clj, toks_hy
 from sxpyr import configure
 from sxpyr import *
 
 
 parse = configure()
-parse_cl = configure(syms_cl)
-parse_el = configure(syms_el)
-parse_gui = configure(syms_gui,
+parse_cl = configure(toks_cl)
+parse_el = configure(toks_el)
+parse_gui = configure(toks_gui,
                       quote_in_symbol=True,)
-parse_clj = configure(syms_clj,
+parse_clj = configure(toks_clj,
                       quote_in_symbol=True,
                       #curlies_map=True,
                       #immutable_cons=True,
                       additional_whitespace=(',',),)
-parse_hy = configure(syms_hy)
+parse_hy = configure(toks_hy)
 
 
 def sprint(gen, match=None):
