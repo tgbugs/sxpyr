@@ -1,4 +1,6 @@
 from .sexp import configure, __version__
+
+# ast nodes
 from .sexp import (
     ListP,
     ListS,
@@ -22,9 +24,22 @@ from .sexp import (
     SUQuote,
     Sharp,
     FeatureExpr,)
+
+# data types
 from .sexp import (
-    toks_cl,
-    toks_el,
-    toks_gui,
-    toks_clj,
-    toks_hy)
+    Cons,
+    List,
+    Array,
+    Vector,
+    Set,
+    Dict,)
+
+# dialect configs
+from .sexp import (
+    conf_sxpyr,
+    conf_cl,
+    conf_el,
+    conf_rkt,
+    conf_gui,
+    conf_clj,
+    conf_hy)

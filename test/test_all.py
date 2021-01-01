@@ -1,20 +1,23 @@
 import sys
-from sxpyr import toks_cl, toks_el, toks_gui, toks_clj, toks_hy
+from sxpyr import (conf_sxpyr,
+                   conf_cl,
+                   conf_el,
+                   conf_rkt,
+                   conf_gui,
+                   conf_clj,
+                   conf_hy)
 from sxpyr import configure
 from sxpyr import *
 
 
-parse = configure()
-parse_cl = configure(toks_cl)
-parse_el = configure(toks_el)
-parse_gui = configure(toks_gui,
-                      quote_in_symbol=True,)
-parse_clj = configure(toks_clj,
-                      quote_in_symbol=True,
-                      #curlies_map=True,
-                      #immutable_cons=True,
-                      additional_whitespace=(',',),)
-parse_hy = configure(toks_hy)
+parse_common = configure()
+parse_sxpyr = configure(**conf_sxpyr)
+parse_cl = configure(**conf_cl)
+parse_el = configure(**conf_el)
+parse_rkt = configure(**conf_rkt)
+parse_gui = configure(**conf_gui)
+parse_clj = configure(**conf_clj)
+parse_hy = configure(**conf_hy)
 
 
 def sprint(gen, match=None):
@@ -35,73 +38,74 @@ def sprint(gen, match=None):
 def test_parse(debug=False):
     # asdf
 
-    sprint(parse("#{HRM}#"))  # FIXME ambiguous, used by guile
-    sprint(parse("#{HRM} #"))  # with this
+    sprint(parse_rkt(""))
+    sprint(parse_rkt("#{HRM}#"))  # FIXME ambiguous, used by guile
+    sprint(parse_rkt("#{HRM} #"))  # with this
 
-    sprint(parse("(# \"lol\")"))
-    sprint(parse("#"))
+    sprint(parse_rkt("(# \"lol\")"))
+    sprint(parse_rkt("#"))
 
-    sprint(parse("'#:|fd\\sA|"))
+    sprint(parse_rkt("'#:|fd\\sA|"))
 
     sprint(parse_clj("({'({:really? 'yes}) :wat 'thing :data} '({:really? 'yes}))"))
     sprint(parse_clj("({[{:really? 'yes}] :wat 'thing :data} [{:really? 'yes}])"))
 
     # these should read but will error later
     # because they have no label
-    sprint(parse("#="))
-    sprint(parse("##"))
-    sprint(parse("#0=(1 2 3 . #0#)"))
-    #sprint(parse("('##)"))  # TODO
+    sprint(parse_rkt("#="))
+    sprint(parse_rkt("##"))
+    sprint(parse_rkt("#0=(1 2 3 . #0#)"))
+    #sprint(parse_rkt("('##)"))  # TODO
 
-    sprint(parse("#:|a b|"))
+    sprint(parse_rkt("#:|a b|"))
     # atom vs keyword distinction
-    sprint(parse(":|a b|"))
-    sprint(parse("|:a b|"))
+    sprint(parse_rkt(":|a b|"))
+    sprint(parse_rkt("|:a b|"))
 
-    sprint(parse(":|d / e|"))
-    sprint(parse("|:f / g|"))
+    sprint(parse_rkt(":|d / e|"))
+    sprint(parse_rkt("|:f / g|"))
 
-    sprint(parse('#| #\; |#'))
+    sprint(parse_rkt('#| #\; |#'))
 
-    sprint(parse('#\\" lol'), match=[Char('"'), Atom('lol')])
-    sprint(parse('(#\\))'))
-    sprint(parse(r'"."'))
-    sprint(parse(r'#\0'))
-    sprint(parse(r'#\.'))
-    sprint(parse(r'#\space'))
+    sprint(parse_rkt('#\\" lol'), match=[Char('"'), Atom('lol')])
+    sprint(parse_rkt('(#\\))'))
+    sprint(parse_rkt(r'"."'))
+    sprint(parse_rkt(r'#\0'))
+    sprint(parse_rkt(r'#\.'))
+    sprint(parse_rkt(r'#\space'))
 
-    sprint(parse(r'"\""'))
+    sprint(parse_rkt(r'"\""'))
 
-    sprint(parse(r"(#\0)"))
-    sprint(parse(r"#\0"))
-    sprint(parse("\\#"))
-    sprint(parse("'\\#"))
+    sprint(parse_rkt(r"(#\0)"))
+    sprint(parse_rkt(r"#\0"))
+    sprint(parse_rkt("\\#"))
+    sprint(parse_rkt("'\\#"))
 
     # FIXME this means we have to preserve the escapes in atoms too!!!!
-    sprint(parse('\1e+NaN')) # -> symbol
-    sprint(parse('1e+NaN'))  # -> number
+    sprint(parse_rkt('\1e+NaN')) # -> symbol
+    sprint(parse_rkt('1e+NaN'))  # -> number
 
     # sharp things
 
-    #sprint(parse("#"))
-    sprint(parse("##HRM"))
-    sprint(parse("#;1 2"))
-    sprint(parse("#; 3 4"))
-    sprint(parse("#; hello"), match=[XComment(Atom('hello'))])
-    sprint(parse("#_ there"), match=[XComment(Atom('there'))])
-    sprint(parse("#a"))
-    sprint(parse("#hash"))
-    sprint(parse("#\\z"))
-    sprint(parse("#'a"))
-    sprint(parse("#`a"))
-    sprint(parse("#,a"), match=[Sharp(UQuote(Atom('a')))])
-    sprint(parse("#,@a"), match=[Sharp(SUQuote(Atom('a')))])
+    #sprint(parse_rkt("#"))
+    sprint(parse_rkt("##HRM"))
+    sprint(parse_rkt("#;1 2"))
+    sprint(parse_rkt("#; 3 4"))
+    sprint(parse_rkt("#; hello"), match=[XComment(Atom('hello'))])
+    sprint(parse_hy("#_ there"), match=[XComment(Atom('there'))])
+    sprint(parse_rkt("#a"))
+    sprint(parse_rkt("#hash"))
+    sprint(parse_rkt("#\\z"))
+    sprint(parse_rkt("#'a"))
+    sprint(parse_rkt("#`a"))
+    sprint(parse_rkt("#,a"), match=[Sharp(UQuote(Atom('a')))])
+    sprint(parse_rkt("#,@a"), match=[Sharp(SUQuote(Atom('a')))])
 
     # splicing unquote
-    sprint(parse(r"'(regular , @ oops)"))
-    sprint(parse(r"'(regular , @unquote)"))
-    sprint(parse(r"'(splicing ,@unquote)"))
-    sprint(parse(r"'(splicing ,@ unquote2)"))
+    sprint(parse_rkt(r"'(regular , @ oops)"))
+    sprint(parse_rkt(r"'(regular , @unquote)"))
+    sprint(parse_rkt(r"'(splicing ,@unquote)"))
+    sprint(parse_rkt(r"'(splicing ,@ unquote2)"))
 
     sprint(parse_el(r"(?\^?)"))
 
@@ -146,21 +150,21 @@ def test_parse(debug=False):
     # ugh what a mess, definitely not reading this stuff right now
 
     # charlits old
-    sprint(parse(r'(list #\ a)'))
-    sprint(parse(r'(list #\,a)'))
-    sprint(parse(r'(list #\`a)'))
-    sprint(parse(r'(list #\|a)'))
+    sprint(parse_rkt(r'(list #\ a)'))
+    sprint(parse_rkt(r'(list #\,a)'))
+    sprint(parse_rkt(r'(list #\`a)'))
+    sprint(parse_rkt(r'(list #\|a)'))
 
-    sprint(parse(r'(list ?\ a)'))
-    sprint(parse(r'(list ?\,a)'))
-    sprint(parse(r'(list ?\`a)'))
-    sprint(parse(r'(list ?\|a)'))
+    sprint(parse_rkt(r'(list ?\ a)'))
+    sprint(parse_rkt(r'(list ?\,a)'))
+    sprint(parse_rkt(r'(list ?\`a)'))
+    sprint(parse_rkt(r'(list ?\|a)'))
 
     sprint(parse_clj(r'(list \a\b\c)'))
     sprint(parse_clj(r'(list \a\b\c)'))
     # FIXME ?asdf and \asdf both cause read errors
 
-    sprint(parse('(modify-syntax-entry ?\{  "(}1nb" table)'))
+    sprint(parse_rkt('(modify-syntax-entry ?\{  "(}1nb" table)'))
     sprint(parse_el('(modify-syntax-entry ?\{  "(}1nb" table)'))
     sprint(parse_el("?a?b?c"))
     sprint(parse_el("(list ?a?b?c)"))
@@ -173,30 +177,30 @@ def test_parse(debug=False):
     # it to evaluate must be a legacy thing
     sprint(parse_el("?("))
 
-    sprint(parse("#|| lol |||||#"))
-    sprint(parse("a #| b #| c |# d |# e"))
+    sprint(parse_rkt("#|| lol |||||#"))
+    sprint(parse_rkt("a #| b #| c |# d |# e"))
 
-    sprint(parse("(|Append| '|Append|)"))
+    sprint(parse_rkt("(|Append| '|Append|)"))
     sprint(parse_cl("(`())"))
     #sprint(parse_cl("(a (b (c)) (d (e) `(f (g) h) ((i) j)))"))
-    #sprint(parse("(a (b (c)) (d (e) `(f (g)  (1 (2)) (3 (4)) (ca 'q (* (f (1) (2))h))) ((i) j)))"))
+    #sprint(parse_rkt("(a (b (c)) (d (e) `(f (g)  (1 (2)) (3 (4)) (ca 'q (* (f (1) (2))h))) ((i) j)))"))
 
-    sprint(parse("a|b c|d"))
-    sprint(parse("|a|b "))
-    sprint(parse("|a| b"))
+    sprint(parse_rkt("a|b c|d"))
+    sprint(parse_rkt("|a|b "))
+    sprint(parse_rkt("|a| b"))
 
     # welcome to the watverse
-    sprint(parse("(and 'a'b'c)"))
+    sprint(parse_rkt("(and 'a'b'c)"))
 
     sprint(parse_clj(":see-alsos [:clojure.core/* :clojure.core/*'],"))  # clojure weirdness  TODO
 
     # O ... K ... today we learned something about python strings
     # which brings us back to the question of why our example was failing
-    sprint(parse(r";\
+    sprint(parse_rkt(r";\
     "))
-    sprint(parse(r";\
+    sprint(parse_rkt(r";\
 I can't believe you've done this."))
-    sprint(parse(
+    sprint(parse_rkt(
         # yeah ... you just bashed yourself you idiot
         # \ escaping a literal newline is a rookie mistake
         # in a fit of extreme annoyance, there must be a newline between
@@ -219,7 +223,7 @@ r""";\
 )"""
 #"""
 ))
-    sprint(parse('(#\\))'))
+    sprint(parse_rkt('(#\\))'))
     sprint(parse_cl(
         # common lisp reader making our day super bad for square brackets
     r"""
@@ -235,73 +239,73 @@ r""";\
               x)))
     ((45) 123)))
 """))
-    sprint(parse('#\['))
-    sprint(parse('#| | |#'))
+    sprint(parse_rkt('#\['))
+    sprint(parse_rkt('#| | |#'))
 
-    sprint(parse(r'"\\"'))
-    sprint(parse(r'("\\")'))
-    sprint(parse(r'[("\\")]'))
+    sprint(parse_rkt(r'"\\"'))
+    sprint(parse_rkt(r'("\\")'))
+    sprint(parse_rkt(r'[("\\")]'))
 
-    sprint(parse("(define lol #f)"))
-    sprint(parse("[define hah #t]"))
+    sprint(parse_rkt("(define lol #f)"))
+    sprint(parse_rkt("[define hah #t]"))
 
-    sprint(parse("{:a 1 :b 2 :c 3}"))
-    sprint(parse("{:a 1 :b {hello there} :c 3}"))
+    sprint(parse_rkt("{:a 1 :b 2 :c 3}"))
+    sprint(parse_rkt("{:a 1 :b {hello there} :c 3}"))
 
-    sprint(parse("#'stx"))
-    sprint(parse("#`stx"))
+    sprint(parse_rkt("#'stx"))
+    sprint(parse_rkt("#`stx"))
 
     # feature expressions
-    sprint(parse("#+\n()"))
-    sprint(parse("#-\n()"))
-    sprint(parse("#- (not feature)"))
+    sprint(parse_rkt("#+\n()"))
+    sprint(parse_rkt("#-\n()"))
+    sprint(parse_rkt("#- (not feature)"))
 
-    sprint(parse("#+()"))
-    sprint(parse("#-()"))
-    sprint(parse("#-(and yes I have features)"))
-    sprint(parse("#-nil"))
-    sprint(parse("#+nil"))
-    sprint(parse("#+nil #-nil #-nil #-nil 'a"))
-    sprint(parse("#+(or oh no) woop"))
+    sprint(parse_rkt("#+()"))
+    sprint(parse_rkt("#-()"))
+    sprint(parse_rkt("#-(and yes I have features)"))
+    sprint(parse_rkt("#-nil"))
+    sprint(parse_rkt("#+nil"))
+    sprint(parse_rkt("#+nil #-nil #-nil #-nil 'a"))
+    sprint(parse_rkt("#+(or oh no) woop"))
 
     # eXpression comments
-    sprint(parse("#;\n(a #; b c)"))
-    sprint(parse("(a #; b c)"))
-    sprint(parse("(a #_ b c)"))
-    sprint(parse("(a #_#; b c)"))
-    sprint(parse("(a #; #; b c)"))
-    sprint(parse("(a #_ #_ b c)"))
+    sprint(parse_rkt("#;\n(a #; b c)"))
+    sprint(parse_rkt("(a #; b c)"))
+    sprint(parse_rkt("(a #_ b c)"))
+    sprint(parse_rkt("(a #_#; b c)"))
+    sprint(parse_rkt("(a #; #; b c)"))
+    sprint(parse_rkt("(a #_ #_ b c)"))
 
-    sprint(parse("' ; shi\nt"))
+    sprint(parse_rkt("' ; shi\nt"))
 
-    sprint(parse('(a"b\\"c"d)'), match=[
+    sprint(parse_rkt('(a"b\\"c"d)'), match=[
         ListP.from_elements(
             Atom('a'),
             EString(['b', SEscape('"'), 'c']),
             Atom('d'),)
     ])  # should fail
 
-    sprint(parse("('())"), match=[
+    sprint(parse_rkt("('())"), match=[
         ListP.from_elements(Quote(ListP.from_elements()),)
     ])
 
-    sprint(parse("('()) a"), match=[
+    sprint(parse_rkt("('()) a"), match=[
         ListP.from_elements(Quote(ListP.from_elements()),),
         Atom('a')
     ])
 
-    sprint(parse("(X\"\")"), match=[
+    sprint(parse_rkt("(X\"\")"), match=[
         ListP.from_elements(
             Atom('X'),
             '')
     ])
-    sprint(parse("'(1'q)"), match=[
+    sprint(parse_rkt("'(1'q)"), match=[
         Quote(
             ListP.from_elements(
                 Atom('1'),
                 Quote(Atom('q'))))
     ])
-    sprint(parse("'(('q)a)"), match=[
+    sprint(parse_rkt("'(('q)a)"), match=[
         Quote(
             ListP.from_elements(
                 ListP.from_elements(
@@ -309,73 +313,73 @@ r""";\
                 Atom('a')))
     ])
 
-    sprint(parse("('(x))"))
-    sprint(parse("()"))
-    sprint(parse("(())"))
-    sprint(parse("(()())"))
-    sprint(parse("'(1)"))
-    sprint(parse("'(1())"))
-    sprint(parse("'(('q))"))
-    sprint(parse("''''''''''q"))
+    sprint(parse_rkt("('(x))"))
+    sprint(parse_rkt("()"))
+    sprint(parse_rkt("(())"))
+    sprint(parse_rkt("(()())"))
+    sprint(parse_rkt("'(1)"))
+    sprint(parse_rkt("'(1())"))
+    sprint(parse_rkt("'(('q))"))
+    sprint(parse_rkt("''''''''''q"))
 
     # quasiquote
-    sprint(parse("(`(x))"))
-    sprint(parse("`(1)"))
-    sprint(parse("`(1())"))
-    sprint(parse("`((`q))"))
-    sprint(parse("``````````q"))
-    sprint(parse("`(1(2)`(3)(`4)`(`5))"))
+    sprint(parse_rkt("(`(x))"))
+    sprint(parse_rkt("`(1)"))
+    sprint(parse_rkt("`(1())"))
+    sprint(parse_rkt("`((`q))"))
+    sprint(parse_rkt("``````````q"))
+    sprint(parse_rkt("`(1(2)`(3)(`4)`(`5))"))
 
-    sprint(parse("(a (b)) c"))
-    sprint(parse("'(1(2)'(3)) "))
-    sprint(parse("'(1(2)'(3))"))
+    sprint(parse_rkt("(a (b)) c"))
+    sprint(parse_rkt("'(1(2)'(3)) "))
+    sprint(parse_rkt("'(1(2)'(3))"))
 
-    sprint(parse("'(1(2))"))
-    sprint(parse("'(1(2)'3)"))
-    sprint(parse("'(1(2)'(3)('4))"))
-    sprint(parse("'(1(2)'(3)) oops"))
-    sprint(parse("'(1(2)'(3)('4)f)"))
-    sprint(parse("'(1(2)'(3)('4)())"))
-    sprint(parse("'(1(2)'(3)('4)'())"))
-    sprint(parse("'(1(2)'(3)('4)'('5))"))
-    sprint(parse('(a (b))\nc'))
-    sprint(parse('(d ; comment\n(e))\nf'))
-    sprint(parse(';comment'))
-    sprint(parse('(symbol :keyword 1234 "string")'))
-    sprint(parse('symbol'))
-    sprint(parse('1234'))
-    sprint(parse('"string"'))
-    sprint(parse('t'))
-    sprint(parse('#t'))
-    sprint(parse('#f'))
-    sprint(parse("'()"))
-    sprint(parse("'quoted-symbol"))
-    sprint(parse("       leading whitespace"))
-    sprint(parse("trailing whitespace               "))
-    sprint(parse("   'leading"))
-    sprint(parse("'trailing    "))
-    sprint(parse("'(((((((((((())))))))))))"))
-    sprint(parse("wat 'trailing"))
-    sprint(parse("symbol'quote more"))
-    sprint(parse(":keyword'quote"))
-    sprint(parse("''quote"))
-    sprint(parse("'quote'quote"))
-    sprint(parse("'quote(sym1)"))
-    sprint(parse("'quote[sym2]"))
-    sprint(parse("sym(sym3)"))
-    sprint(parse("sym[sym4]"))
-    sprint(parse("1[sym5]"))
-    sprint(parse("2[sym6]"))
-    sprint(parse("(a (b))"))
-    sprint(parse("'(a (b))"))
-    sprint(parse("'(1 2 3 4 (asdf asdf))"))
-    sprint(parse("'(5 6 7 8 (asdf asdf))\n(desire to know more intensifies)"))
-    sprint(parse("(defun asdf (there) 'hello there)"))
-    sprint(parse("I am multiple atoms that should be read in a row. (indeed) \"yes\""))
-    sprint(parse('(testing "I am a happy string \\" yay!" string escape)'))
+    sprint(parse_rkt("'(1(2))"))
+    sprint(parse_rkt("'(1(2)'3)"))
+    sprint(parse_rkt("'(1(2)'(3)('4))"))
+    sprint(parse_rkt("'(1(2)'(3)) oops"))
+    sprint(parse_rkt("'(1(2)'(3)('4)f)"))
+    sprint(parse_rkt("'(1(2)'(3)('4)())"))
+    sprint(parse_rkt("'(1(2)'(3)('4)'())"))
+    sprint(parse_rkt("'(1(2)'(3)('4)'('5))"))
+    sprint(parse_rkt('(a (b))\nc'))
+    sprint(parse_rkt('(d ; comment\n(e))\nf'))
+    sprint(parse_rkt(';comment'))
+    sprint(parse_rkt('(symbol :keyword 1234 "string")'))
+    sprint(parse_rkt('symbol'))
+    sprint(parse_rkt('1234'))
+    sprint(parse_rkt('"string"'))
+    sprint(parse_rkt('t'))
+    sprint(parse_rkt('#t'))
+    sprint(parse_rkt('#f'))
+    sprint(parse_rkt("'()"))
+    sprint(parse_rkt("'quoted-symbol"))
+    sprint(parse_rkt("       leading whitespace"))
+    sprint(parse_rkt("trailing whitespace               "))
+    sprint(parse_rkt("   'leading"))
+    sprint(parse_rkt("'trailing    "))
+    sprint(parse_rkt("'(((((((((((())))))))))))"))
+    sprint(parse_rkt("wat 'trailing"))
+    sprint(parse_rkt("symbol'quote more"))
+    sprint(parse_rkt(":keyword'quote"))
+    sprint(parse_rkt("''quote"))
+    sprint(parse_rkt("'quote'quote"))
+    sprint(parse_rkt("'quote(sym1)"))
+    sprint(parse_rkt("'quote[sym2]"))
+    sprint(parse_rkt("sym(sym3)"))
+    sprint(parse_rkt("sym[sym4]"))
+    sprint(parse_rkt("1[sym5]"))
+    sprint(parse_rkt("2[sym6]"))
+    sprint(parse_rkt("(a (b))"))
+    sprint(parse_rkt("'(a (b))"))
+    sprint(parse_rkt("'(1 2 3 4 (asdf asdf))"))
+    sprint(parse_rkt("'(5 6 7 8 (asdf asdf))\n(desire to know more intensifies)"))
+    sprint(parse_rkt("(defun asdf (there) 'hello there)"))
+    sprint(parse_rkt("I am multiple atoms that should be read in a row. (indeed) \"yes\""))
+    sprint(parse_rkt('(testing "I am a happy string \\" yay!" string escape)'))
     # NOTE if you have unmatched parens in a here string that means that
     # this parser will fail
-    sprint(parse("""
+    sprint(parse_rkt("""
 ;;; hrm
 #;
 (
@@ -397,7 +401,7 @@ a bit for complexity
 )
 )
 '''
-    sprint(parse(test_cfg1))
+    sprint(parse_rkt(test_cfg1))
 
 
 def test_chars():
@@ -623,9 +627,9 @@ def test_paths():
                 continue
 
             try:
-                res = sprint(parse(hrm))
+                res = sprint(parse_rkt(hrm))
                 print('success:', p)
-                #val = list(parse(hrm))
+                #val = list(parse_rkt(hrm))
             except Exception as err:
                 try:
                     if p.name in should_fail:
@@ -669,7 +673,7 @@ def test_paths():
 
                 debug = True
                 try:
-                    sprint(parse(hrm))
+                    sprint(parse_rkt(hrm))
                 except:
                     pass
 
@@ -718,7 +722,7 @@ def test_fails():
     should_have_failed = []
     for bad in bads:
         try:  # I WANT MACROS
-            sprint(parse(bad))
+            sprint(parse_rkt(bad))
             should_have_failed.append(bad)
         except SyntaxError as e:
             print(f'task failed succssfully for {bad!r}')

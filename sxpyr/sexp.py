@@ -32,6 +32,9 @@ class Ast:
         elif hasattr(self, 'collect'):
             return f'<{self.__class__.__name__[:3]} {self.collect!r}>'
         else:
+            self.__class__.__repr__ = lambda s: 'fuck'
+            breakpoint()
+            "asdf"
             raise Exception('oops')
 
     def __hash__(self):
@@ -170,7 +173,7 @@ class SEscape(_EscBase):
         return dialect_escapes(self._value)
 
 
-class String(Ast, str):
+class String(str, Ast):
     """ Ast for plain strings so that we can
         do things like track start/end """
 
@@ -357,42 +360,206 @@ toks_base = ('(', ')', '[', ']',
              ',', '@',
              '\n', '\t', ' ', ':', '\\', '\\', unp,
              '{', '}',
-             '#', '|', '|')
+             '#', '|', '|',
+             ';')
 
 toks_cl = ('(', ')', unp, unp,
            ';', '"', "'", '`',
            ',', '@',
            '\n', '\t', ' ', ':', '\\', '\\', unp,
            unp, unp,
-           '#', '|', '|')
+           '#', '|', '|',
+           unp)
 
 toks_el = ('(', ')', '[', ']',
            ';', '"', "'", '`',
            ',', '@',
            '\n', '\t', ' ', ':', '\\', '\\', '?',
            unp, unp,  # FIXME uses curlies but in a different context (which doesn't need pairing)
-           '#', unp, unp)
+           '#', unp, unp,
+           unp)
 
 toks_hy = ('(', ')', '[', ']',
            ';', '"', "'", '`',
            '~', '@', # diff
            '\n', '\t', ' ', ':', unp, '\\', unp,
            '{', '}',
-           '#', unp, unp)
+           '#', unp, unp,
+           '_')
 
 toks_clj = ('(', ')', '[', ']',
             ';', '"', "'", '`',
             '~', '@', # diff
             '\n', '\t', ' ', ':', unp, '\\', '\\',  # clj uses a bare backslash for char
             '{', '}',
-            '#', unp, unp)
+            '#', unp, unp,
+            '_')
 
 toks_gui = ('(', ')', '[', ']',
             ';', '"', "'", '`',
             ',', '@',
             '\n', '\t', ' ', ':', '\\', '\\', unp,
             unp, unp,
-            '#', '|', '|')
+            '#', '|', '|',
+            ';')
+
+# tokens
+toks_template = {
+    # the naming conventions for tokens
+    # are to use beg end when a form must end with a specific token
+    # and to use to for forms that have multiple possible ends
+
+    # whitespace
+    't_newline': '\n',
+    't_tab': '\t',
+    't_space': ' ',
+
+    # lists
+    't_beg_list_p': unp,
+    't_end_list_p': unp,
+    't_beg_list_s': unp,
+    't_end_list_s': unp,
+    't_beg_list_c': unp,
+    't_end_list_c': unp,
+
+    't_beg_end_str': unp,
+    't_beg_end_aver': unp,
+
+    't_to_sharp': unp,
+    't_to_cblk_in_shrp': unp,
+    't_to_xcom_in_shrp': unp,
+
+    't_to_quote': unp,
+    't_to_quasi': unp,
+    't_to_unquote': unp,
+    't_to_splc_in_unq': unp,
+
+    't_to_keyw': unp,
+
+    't_to_esc': unp,
+    't_to_esc_in_str': unp,
+    't_to_char': unp,
+    't_to_comment': unp,
+}
+
+"""
+asdf = [toks_base, toks_cl, toks_el, toks_hy, toks_clj, toks_gui]
+order = ['t_beg_list_p', 't_end_list_p', 't_beg_list_s', 't_end_list_s', 't_to_comment', 't_beg_end_str', 't_to_quote', 't_to_quasi', 't_to_unquote', 't_to_splc_in_unq', 't_newline', 't_tab', 't_space', 't_to_keyw', 't_to_esc', 't_to_esc_in_str', 't_to_char', 't_beg_list_c', 't_end_list_c', 't_to_sharp', 't_to_cblk_in_shrp', 't_beg_end_aver', 't_to_xcom_in_shrp']
+
+from pprint import pprint
+for tup in asdf:
+    hrm = {k:v for k, v in zip(order, tup)}
+    pprint({k:hrm[k] for k in toks_template}, sort_dicts=False)  # huh apparently sort_dicts is a recent addition
+"""
+
+
+toks_common = {
+    't_newline':         '\n',
+    't_tab':             '\t',
+    't_space':           ' ',
+    't_beg_list_p':      '(',
+    't_end_list_p':      ')',
+   #'t_beg_list_s':      '[',
+   #'t_end_list_s':      ']',
+   #'t_beg_list_c':      '{',
+   #'t_end_list_c':      '}',
+    't_beg_end_str':     '"',
+   #'t_beg_end_aver':    '|',
+    't_to_sharp':        '#',
+   #'t_to_char_in_shrp': '\\',  # TODO
+   #'t_to_cblk_in_shrp': '|',
+   #'t_to_xcom_in_shrp': ';',
+    't_to_quote':        "'",
+    't_to_quasi':        '`',
+    't_to_unquote':      ',',
+    't_to_splc_in_unq':  '@',
+    't_to_keyw':         ':',  # FIXME racket and scheme keywords don't do this
+   #'t_to_esc':          '\\',
+    't_to_esc_in_str':   '\\',
+   #'t_to_char':         '?',
+    't_to_comment':      ';',
+}
+
+toks_b_list_s = {
+    't_beg_list_s': '[',
+    't_end_list_s': ']',
+}
+
+toks_b_list_c = {
+    't_beg_list_c': '{',
+    't_end_list_c': '}',
+}
+
+toks_b_list_sc = {
+    **toks_b_list_s,
+    **toks_b_list_c,
+}
+
+toks_scheme = {
+    **toks_common,
+    **toks_b_list_s,
+    't_to_esc':          '\\',
+    't_to_xcom_in_shrp': ';',
+    't_beg_end_aver':    '|',
+    't_to_cblk_in_shrp': '|',
+    't_to_keyw_in_shrp': ':',
+}
+
+# dialect configuration
+
+conf_sxpyr = {
+    'additional_whitespace': ',',
+    **toks_common,
+    **toks_b_list_sc,
+    't_to_keyw':         ':',
+    't_to_xcom_in_shrp': ';',
+    't_to_unquote':      '~',  # comma as whitespace is too useful
+    # no block quotes no escapes and no verbatim atoms
+}
+
+conf_cl = {
+    **toks_common,
+    't_to_keyw':         ':',
+    't_to_esc':          '\\',
+    't_beg_end_aver':    '|',
+    't_to_cblk_in_shrp': '|',
+}
+
+conf_el = {
+    **toks_common,
+    **toks_b_list_s,
+    't_to_keyw': ':',
+    't_to_char': '?',
+    't_to_esc':  '\\',
+}
+
+conf_hy = {
+    **toks_common,
+    **toks_b_list_sc,
+    't_to_keyw':         ':',
+    't_to_xcom_in_shrp': '_',
+    't_to_unquote':      '~',
+}
+
+conf_clj = {
+    'quote_in_symbol': True,
+    'additional_whitespace': ',',
+    **toks_common,
+    **toks_b_list_sc,
+    't_to_keyw':         ':',
+    't_to_char':         '\\',
+    't_to_xcom_in_shrp': '_',
+    't_to_unquote':      '~',
+}
+
+conf_rkt = {
+    **toks_scheme,
+}
+
+conf_gui = {
+    'quote_in_symbol': True,
+    **toks_scheme,
+}
 
 
 if True:  # make sure we didn't accidentally forget to update a dialect
@@ -403,9 +570,8 @@ if True:  # make sure we didn't accidentally forget to update a dialect
      for bs, ds in zip_longest(toks_base, d, fillvalue='aaaaaaaaaaaaa')]
 
 
-def configure(_tokens=None,
-              quote_in_symbol=False,  # True, False, SyntaxError
-              additional_whitespace=tuple(),
+def configure(quote_in_symbol=False,  # True, False, SyntaxError
+              additional_whitespace='',
               #escape_always=True,
               #curlies_map=False,
               #char_esc_expand=tuple(),  # expand rules must be provided at runtime FIXME dict or function?
@@ -413,19 +579,42 @@ def configure(_tokens=None,
               char_auto_end=True,  # FIXME same issue  XXX not sure we need this, somehow I think racket special cased these?
               #char_name_symbol=False,  # this is what cl does
               #immutable_cons=False,  # FIXME this should be deferred
-              ):
-    if _tokens is None:
-        _tokens = toks_base
-    #if not char_esc_expand:
-        #char_esc_expand = cee_base
+
+              ## tokens (common are set)
+              t_newline='\n',
+              t_tab='\t',
+              t_space=' ',
+              t_beg_list_p='(',
+              t_end_list_p=')',
+              t_beg_list_s=unp,
+              t_end_list_s=unp,
+              t_beg_list_c=unp,
+              t_end_list_c=unp,
+              t_beg_end_str='"',
+              t_beg_end_aver=unp,
+              t_to_sharp='#',
+              t_to_cblk_in_shrp=unp,
+              t_to_xcom_in_shrp=unp,
+              t_to_quote="'",
+              t_to_quasi='`',
+              t_to_unquote=',',
+              t_to_splc_in_unq='@',
+              t_to_keyw=unp,
+              t_to_esc=unp,
+              t_to_esc_in_str='\\',
+              t_to_char=unp,
+              t_to_comment=';',
+
+              **kwargs):
 
     eof = object()
-    toks = [t_beg_list_p, t_end_list_p, t_beg_list_s, t_end_list_s, t_beg_line_comment,
-            t_beg_end_str, t_to_quote, t_to_quasi, t_to_unquote, t_to_splicing_in_unq,
-            t_newline, t_tab, t_space, t_colon, t_beg_esc, t_beg_esc_in_str, t_beg_char,
+    toks = [t_newline, t_tab, t_space,
+            t_beg_list_p, t_end_list_p,
+            t_beg_list_s, t_end_list_s,
             t_beg_list_c, t_end_list_c,
-            t_to_sharp, t_to_cblk_in_shrp, t_beg_end_aver,
-            ] = [_ for _ in _tokens]
+            t_beg_end_str, t_beg_end_aver,
+            t_to_sharp, t_to_quote, t_to_quasi, t_to_unquote, 
+            t_to_keyw, t_to_esc, t_to_char, t_to_comment,]
 
     # even though additional whitespace doesn't get an explicit name
     # it still needs to be in syms to prevent it from being included
@@ -433,30 +622,32 @@ def configure(_tokens=None,
     toks.extend(additional_whitespace)
 
     # other symbols that we may want to support directly in the reader
-    am = '&'  # maybe want for lambda list control words?
+    #am = '&'  # maybe want for lambda list control words?
     #qm = '?'
     #at = '@'  # TODO splicing unquote
 
-    whitespace = (t_newline, t_tab, t_space) + additional_whitespace
-    scoe_complex = (t_newline, t_beg_end_str, t_beg_esc, t_to_sharp, t_to_cblk_in_shrp)
+    whitespace = (t_newline, t_tab, t_space) + tuple(_ for _ in additional_whitespace)
+    scoe_complex = (t_newline, t_beg_end_str, t_to_esc, t_to_sharp, t_to_cblk_in_shrp)
     # note that pipe does not end atoms and keywords but the state still
     # transitions to v similarly exiting v does not exit atom or keyword
-    ak_ends = (t_beg_list_p, t_end_list_p, t_beg_list_s, t_end_list_s, t_beg_list_c, t_end_list_c, t_beg_line_comment, t_beg_end_str, t_to_quote, t_to_quasi, t_to_unquote, *whitespace)
+    ak_ends = (t_beg_list_p, t_end_list_p, t_beg_list_s, t_end_list_s, t_beg_list_c, t_end_list_c, t_to_comment, t_beg_end_str, t_to_quote, t_to_quasi, t_to_unquote, *whitespace)
     '()[]{};"\'`,\n\t '
     if quote_in_symbol:
         ak_ends = tuple(s for s in ak_ends if s != t_to_quote)
 
-    m_ends = (*ak_ends, t_beg_char, t_beg_end_aver, t_to_sharp)  # FIXME tricky because we need at least one char for m
+    m_ends = (*ak_ends, t_to_char, t_beg_end_aver, t_to_sharp)  # FIXME tricky because we need at least one char for m
 
     # XXX NOTE state could be defined globally but I think
     # keeping it in here will have better performance
-    states = [bos, s_atom, s_keyw, s_quote, s_unquote, s_unq_first, s_unq_splice, s_quasiq,
-              s_string, s_list_p, s_list_s, s_list_c, s_sharp, s_comment_l,
-              s_esc, s_esc_str, s_comment_x, s_feat_x, s_comment_blk, s_pipe_in_comment_b, s_atom_verbatim, s_comment_b_nest, s_char, s_char_first] = [
+    states = [bos, s_atom, s_keyw, s_quote, s_unquote, s_unq_first,
+              s_unq_splice, s_quasiq, s_string, s_list_p, s_list_s,
+              s_list_c, s_sharp, s_comm, s_esc, s_esc_str,
+              s_comment_x, s_feat_x, s_cblk, s_pi_in_cblk,
+              s_atom_verbatim, s_comment_b_nest, s_char, s_char_first] = [
         State(i) for i in range(24)]
     esclikes = s_esc, s_char
     quotelikes = s_quote, s_unquote, s_unq_first, s_unq_splice, s_quasiq, s_comment_x, s_feat_x, s_sharp
-    listlikes = s_list_p, s_list_s, s_list_c, s_comment_blk
+    listlikes = s_list_p, s_list_s, s_list_c, s_cblk
 
     state_names = {
         bos: 'bos',
@@ -472,13 +663,13 @@ def configure(_tokens=None,
         s_list_s: 'vect',
         s_list_c: 'dict',
         s_sharp: 'shrp',
-        s_comment_l: 'comm',
+        s_comm: 'comm',
         s_esc: 'escp',
         s_esc_str: 'sesc',
         s_comment_x: 'xcom',
         s_feat_x: 'feat',
-        s_comment_blk: 'cblk',
-        s_pipe_in_comment_b: 'mebl',  # maybe leave block comment
+        s_cblk: 'cblk',
+        s_pi_in_cblk: 'mebl',  # maybe leave block comment
         s_atom_verbatim: 'aver',
         s_comment_b_nest: 'nblk',
         s_char: 'char',
@@ -528,8 +719,8 @@ def configure(_tokens=None,
         # FIXME this second set of branches shouldn't be necessary?
         if   state == s_string: val = caste_string(collect)
         elif state == s_atom: val = caste_atom(collect)
-        elif state == s_comment_l: val = Comment(collect)
-        elif state == s_comment_blk: val = BComment(collect)
+        elif state == s_comm: val = Comment(collect)
+        elif state == s_cblk: val = BComment(collect)
         elif state == s_keyw: val = caste_keyword(collect)
         elif state == s_list_p: val = ListP(collect)
         elif state == s_list_s: val = ListS(collect)
@@ -580,7 +771,7 @@ def configure(_tokens=None,
             return _collect
 
         if   char == t_beg_end_str: collect = to_state_collect(s_string)
-        elif char == t_beg_line_comment: collect = to_state_collect(s_comment_l)
+        elif char == t_to_comment: collect = to_state_collect(s_comm)
         elif char == t_beg_list_p: collect = to_state(s_list_p)
         elif char == t_beg_list_s: collect = to_state(s_list_s)
         elif char == t_beg_list_c: collect = to_state(s_list_c)
@@ -592,14 +783,14 @@ def configure(_tokens=None,
         # collect is None
         elif char == t_to_sharp:
             state = stack[-1]
-            if state == s_comment_blk:  # FIXME do we really want to do this here
+            if state == s_cblk:  # FIXME do we really want to do this here
                 # it means that we didn't handle a case correctly in parse
-                stack.append(s_comment_b_nest)  # FIXME maybe nest s_comment_blk
+                stack.append(s_comment_b_nest)  # FIXME maybe nest s_cblk
             else:
                 collect = to_state(s_sharp)
-        elif char == t_beg_char:
+        elif char == t_to_char:
             collect = to_state_collect(s_char_first)
-        elif char == t_beg_esc_in_str:
+        elif char == t_to_esc_in_str:
             collect = to_state_collect(s_esc_str)
         else:
             raise Exception('This should never happen.')
@@ -614,10 +805,10 @@ def configure(_tokens=None,
         if state == s_char_first:  # FIXME using this to prevent issues with strings sigh
             collect = None
         elif (char in (t_beg_list_p, t_beg_list_s, t_beg_list_c, t_to_quote, t_to_quasi, t_to_unquote) or
-              state == s_char and char in (t_beg_char, t_to_sharp) or  # and char_auto_end ??? chars may end chars ie not cl
+              state == s_char and char in (t_to_char, t_to_sharp) or  # and char_auto_end ??? chars may end chars ie not cl
             char == t_beg_end_str and state != s_string):
             collect = push_state_from_char(collect_stack, collect, stack, char)
-        elif stack[-1] == s_comment_blk:
+        elif stack[-1] == s_cblk:
             collect = collect_stack[-1]
             # a bit different from other listlikes because it is its own collector
             # in addition to a nested container for other block quotes
@@ -633,7 +824,7 @@ def configure(_tokens=None,
             print(f'CO: {collect_stack}')
             pass
         state_prev = stack.pop()  # pop ^
-        if (state_prev in (s_pipe_in_comment_b,)):  # transition only no collect
+        if (state_prev in (s_pi_in_cblk,)):  # transition only no collect
             return i_resolve_pops(collect_stack, stack, char)
 
         # FIXME #\;a causes isses for a bunch of readers which
@@ -662,7 +853,7 @@ def configure(_tokens=None,
 
         elif not collect_stack:
             return cut,
-        elif state_prev == s_comment_l:
+        elif state_prev == s_comm:
             if state in (*quotelikes, *listlikes):
                 collect_stack[-1].append(cut)
                 return tuple()
@@ -702,15 +893,15 @@ def configure(_tokens=None,
         if char in (t_end_list_p, t_end_list_s, t_end_list_c): raise SyntaxError(f'# {char} not allowed.')
         elif char == t_to_cblk_in_shrp:  # FIXME essentially things that we want to ignore right now
             stack.pop()
-            stack.append(s_comment_blk)
+            stack.append(s_cblk)
             # FIXME need to update collect
             #collect_stack.pop()
             return True
-        elif char == t_beg_esc:
+        elif char == t_to_esc:
             stack.pop()
             stack.append(s_char_first)
             return True
-        elif char in '_;':
+        elif char == t_to_xcom_in_shrp:
             stack.pop()
             # do not need collect_stack
             # reuse the collect from h for x
@@ -763,7 +954,7 @@ def configure(_tokens=None,
 
                 if state == s_unq_first:
                     # FIXME can we integrate this into the main switch?
-                    if char == t_to_splicing_in_unq:
+                    if char == t_to_splc_in_unq:
                         stack.pop()
                         stack.append(s_unq_splice)
                         continue
@@ -777,7 +968,7 @@ def configure(_tokens=None,
                     # fail on failure cases, or proceed
                     # needs to come before escape due to #\
                     if process_h(collect_stack, stack, char):
-                        if stack[-1] in (s_comment_blk, s_char_first):
+                        if stack[-1] in (s_cblk, s_char_first):
                             collect = collect_stack[-1]  # FIXME h should be via push_state_from_char no?
                         continue
 
@@ -795,10 +986,10 @@ def configure(_tokens=None,
                         #breakpoint()
                     else:
                         char = Escape(char)
-                elif t_beg_char == '?' and state in (s_char_first, s_char) and char == t_beg_esc:  # FIXME HACK for elisp
+                elif t_to_char == '?' and state in (s_char_first, s_char) and char == t_to_esc:  # FIXME HACK for elisp
                     stack.append(s_esc_str)  # NOTE elisp uses the same escape sequences for chars and strings
                     continue
-                elif state not in (s_comment_l, s_comment_blk, s_comment_b_nest, s_char_first) and char == t_beg_esc:  # implicit not in (c, o, m1)
+                elif state not in (s_comm, s_cblk, s_comment_b_nest, s_char_first) and char == t_to_esc:  # implicit not in (c, o, m1)
                     # FIXME TODO need to split \ in string from the rest
                     if state in (s_string, s_char):
                         stack.append(s_esc_str)
@@ -807,7 +998,7 @@ def configure(_tokens=None,
                     #breakpoint()  # XXX m debug start point
                     # FIXME interaction between m and e
                     continue
-                elif state == s_string and char == t_beg_esc_in_str:
+                elif state == s_string and char == t_to_esc_in_str:
                     # FIXME we should be able to handle this homogenously
                     stack.append(s_esc_str)
                     continue
@@ -856,51 +1047,51 @@ def configure(_tokens=None,
                     stack.pop()
                     if char == t_to_cblk_in_shrp:
                         # FIXME sigh
-                        stack.append(s_comment_blk)
+                        stack.append(s_cblk)
                         collect = []
                         collect_stack.append(collect)
                     else:
                         collect.append(t_to_cblk_in_shrp)
 
-                elif state == s_comment_blk and char == t_to_cblk_in_shrp:
-                    stack.append(s_pipe_in_comment_b)
+                elif state == s_cblk and char == t_to_cblk_in_shrp:
+                    stack.append(s_pi_in_cblk)
 
                 # handle all the + cases except
-                elif (                     char not in toks or
-                    state in (s_atom, s_keyw)    and char not in ak_ends and char != t_beg_end_aver or  # TODO see if we actually need the state test here
-                    state in (s_char_first, s_char)  and char not in m_ends or
-                                           char == t_colon or
-                    state != s_unq_first           and char == t_to_splicing_in_unq or  # FIXME do we really need u1?
-                    state == s_sharp            and char == t_to_sharp or  # FIXME should probably work like an FeaureExpr?
-                    state == s_atom_verbatim            and char != t_beg_end_aver or
-                    state == s_pipe_in_comment_b            and char != t_to_sharp or
-                    state in (s_string, s_comment_l, s_comment_blk, s_esc, s_esc_str) and char not in scoe_complex or
-                    state in (s_string, s_comment_l,      s_esc, s_esc_str) and char in (t_to_sharp, t_to_cblk_in_shrp) or
-                    state in (s_string,    s_comment_blk, s_esc, s_esc_str) and char == t_newline or
-                    state in (   s_comment_l, s_comment_blk, s_esc, s_esc_str) and char     in (t_beg_end_str, t_beg_esc) or
-                    (t_beg_char == '?' and
-                     # FIXME EEEEMMMMMAAAAAAAAAAAAACCCCCCSSSSSS
+                elif (char not in toks or
+                      state in (s_atom, s_keyw) and char not in ak_ends and char != t_beg_end_aver or
+                      state in (s_char_first, s_char) and char not in m_ends or
+                      char == t_to_keyw or
+                      state != s_unq_first and char == t_to_splc_in_unq or  # FIXME do we really need u1?
+                      state == s_sharp and char == t_to_sharp or  # FIXME should probably work like an FeaureExpr?
+                      state == s_atom_verbatim and char != t_beg_end_aver or
+                      state == s_pi_in_cblk and char != t_to_sharp or  # fixme confusing
+                      state in (s_string, s_comm, s_cblk, s_esc, s_esc_str) and char not in scoe_complex or
+                      state in (s_string, s_comm,         s_esc, s_esc_str) and char in (t_to_sharp, t_to_cblk_in_shrp) or
+                      state in (s_string,         s_cblk, s_esc, s_esc_str) and char == t_newline or
+                      state in (          s_comm, s_cblk, s_esc, s_esc_str) and char in (t_beg_end_str, t_to_esc) or
+                      (t_to_char == '?' and
+                       # FIXME EEEEMMMMMAAAAAAAAAAAAACCCCCCSSSSSS
                      state == s_char and
-                     char in m_ends and
-                     (collect[-1] == escape_hat or
-                      collect[-1] == '-' and
-                     len(collect) > 1 and  # FIXME HACK to avoid index error should be a state
-                     # implicitly checking if there is a KeyChar in collect
-                     # TODO see if we accidentally induce bugs by reading
-                     # things that the elisp reader would not
+                       char in m_ends and
+                       (collect[-1] == escape_hat or
+                        collect[-1] == '-' and
+                        len(collect) > 1 and  # FIXME HACK to avoid index error should be a state
+                        # implicitly checking if there is a KeyChar in collect
+                        # TODO see if we accidentally induce bugs by reading
+                        # things that the elisp reader would not
                      isinstance(collect [-2], SEscape)))):
                     if collect is None:  # if collect is a list it is
                         # for another state so safe to assign state
                         # here, also required to handle the case where
                         # the loop immediately terminates
-                        state = s_keyw if char == t_colon else s_atom
+                        state = s_keyw if char == t_to_keyw else s_atom
                         stack.append(state)
                         collect = []
                         collect_stack.append(collect)
                         if point_start is None:
                             point_start = point
 
-                    if state == s_pipe_in_comment_b and char != t_to_cblk_in_shrp:
+                    if state == s_pi_in_cblk and char != t_to_cblk_in_shrp:
                         stack.pop()
                         collect.append(t_to_cblk_in_shrp)
                     elif state == s_char_first:
@@ -911,21 +1102,21 @@ def configure(_tokens=None,
                     # this is where a goto would be really easy
 
                 elif ((state in quotelikes or state == bos)
-                                                    and char in (t_end_list_p, t_end_list_s, t_end_list_c) or
-                    state == s_list_p                      and char in (    t_end_list_s, t_end_list_c) or
-                    state == s_list_s                      and char in (t_end_list_p,     t_end_list_c) or
-                    state == s_list_c                      and char in (t_end_list_p, t_end_list_s    )):
+                                        and char in (t_end_list_p, t_end_list_s, t_end_list_c) or
+                      state == s_list_p and char in (              t_end_list_s, t_end_list_c) or
+                      state == s_list_s and char in (t_end_list_p,               t_end_list_c) or
+                      state == s_list_c and char in (t_end_list_p, t_end_list_s)):
                     raise SyntaxError('No matching paren!')
 
                 # majority of pops happen here
                 elif (state in (s_atom, s_keyw) and char in ak_ends or
-                    state in (s_char_first, s_char) and char in m_ends or
-                    state == s_list_p and char == t_end_list_p or
-                    state == s_list_s and char == t_end_list_s or
-                    state == s_list_c and char == t_end_list_c or
-                    state == s_string and char == t_beg_end_str or
-                    state == s_comment_l and char == t_newline or
-                    state == s_pipe_in_comment_b and char == t_to_sharp):
+                      state in (s_char_first, s_char) and char in m_ends or
+                      state == s_list_p     and char == t_end_list_p or
+                      state == s_list_s     and char == t_end_list_s or
+                      state == s_list_c     and char == t_end_list_c or
+                      state == s_string     and char == t_beg_end_str or
+                      state == s_comm       and char == t_newline or
+                      state == s_pi_in_cblk and char == t_to_sharp):
                     collect, *thing = resolve_pops(collect_stack, collect, stack, char)
                     yield from thing
                     # FIXME not sure if correct
@@ -953,7 +1144,7 @@ def configure(_tokens=None,
                         if point_start is None:
                             point_start = point
 
-                elif state == s_comment_blk and char == t_to_sharp:
+                elif state == s_cblk and char == t_to_sharp:
                     push_state_from_char(collect_stack, collect, stack, char)
 
                 elif (state in listlikes or
