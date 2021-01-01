@@ -1,4 +1,7 @@
-from .sexp import configure, __version__
+from .sexp import (
+    configure,
+    make_do_path,
+    __version__)
 
 # ast nodes
 from .sexp import (

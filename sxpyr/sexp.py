@@ -1,9 +1,65 @@
 __version__ = '0.0.1'
 
+from ast import literal_eval
+from json import dumps
 from types import GeneratorType
 
-
 debug = False
+
+
+def make_do_path(do, chunksize=4096):
+    """ along the way to load """
+    #parse = configure(**kwargs)  # FIXME pass in parse
+    #read = conf_read(parse, mawp)  # FIXME
+    def do_path(path):
+        def path_gen():
+            with open(path, 'rt') as f:
+                while True:
+                    data = f.read(chunksize)
+                    if not data:
+                        break
+                    yield from data
+
+        return do(path_gen())
+
+    return do_path
+
+
+def conf_read(parser, walk_help):
+    def skip(v):
+        return [c for c in (Comment, XComment, BComment)
+                if isinstance(v, c)]
+
+    def walk(ast):
+        #print('walk:', ast)
+        if [_ for _ in (Sharp, Quote, IQuote, UQuote, SUQuote)
+            if isinstance(ast, _)]:
+            revalue = walk_help(ast.value, walk)
+            ast.value = revalue
+        elif isinstance(ast, _LBase):
+            # FIXME this kind of defeats the point of having
+            # that nice pda in the first place when we recursively
+            # descend here
+            recollect = [walk_help(_, walk) for _ in ast.collect
+                         if not skip(_)]
+            ast.collect = recollect  # FIXME not quite right
+
+        return walk_help(ast, None)
+        # FIXME TODO quote and such
+        #if ast.__class__ in mawp:
+            #callable_thing = mawp[ast.__class__]
+            #return callable_thing(ast)
+        #else:
+            #return ast
+
+    def read(gen):
+        exp_gen = parser(gen)
+        for expression in exp_gen:
+            if not skip(expression):
+                transformed = walk_help(expression, walk)
+                yield transformed
+
+    return read
 
 
 class _m:
@@ -24,17 +80,19 @@ class _m:
 
 class Ast:
 
-    def __repr__(self):
+    def __repr__(self, **kwargs):
         if hasattr(self, 'value') and type(self.value) != type(self.__repr__):
-            return f'<{self.__class__.__name__[:2]} {self.value}>'
+            if isinstance(self.value, String):
+                return f'<{self.__class__.__name__[:2]} {self.value!r}>'
+            else:
+                return f'<{self.__class__.__name__[:2]} {self.value}>'
         if hasattr(self, '_value'):
             return f'<{self.__class__.__name__[:2]} {self._value}>'
         elif hasattr(self, 'collect'):
             return f'<{self.__class__.__name__[:3]} {self.collect!r}>'
         else:
-            self.__class__.__repr__ = lambda s: 'fuck'
-            breakpoint()
-            "asdf"
+            #self.__class__.__repr__ = lambda s: 'debug'
+            #breakpoint()
             raise Exception('oops')
 
     def __hash__(self):
@@ -90,6 +148,12 @@ class ListC(_LBase):
 
 
 class Keyword(Ast):
+
+    # swindle uses
+    # #: -> real-keyword
+    # : -> keyword
+    # ' -> symbol
+
     # FIXME pretty sure we should get rid of these in the read pass
     # and let the individual implementations determine? but trickly
     # the tradeoff is that we have to make sure that we can
@@ -98,9 +162,14 @@ class Keyword(Ast):
 
     __eq__ = _m.eq_value
 
-    def __init__(self, collect):
+    @classmethod
+    def from_collect(cls, collect):
+        self = cls(''.join(collect))
         self.collect = collect
-        self.value = ''.join(collect)
+        return self
+
+    def __init__(self, value):
+        self.value = value
 
 
 class EKeyword(Keyword):
@@ -111,7 +180,10 @@ class EKeyword(Keyword):
         self.collect = collect
 
     def value(self, dialect_ak_escape):
-        return dialect_ak_escape(collect)
+        if dialect_ak_escape is None:
+            dialect_ak_escape = dialect_ak_escape_def
+
+        return dialect_ak_escape(self.collect)
 
 
 class Atom(Ast):
@@ -127,6 +199,12 @@ class Atom(Ast):
         '#t' '#f' 't' 'nil' '1234'
 
 
+def dialect_ak_escape_def(c):
+    return ''.join([_.value
+                    if isinstance(_, Escape)
+                    else _ for _ in c])
+
+
 class EAtom(Atom):
     # TODO FIXME figure out whether EThings are really subClassOf Things
     # or whether that will cause issues, in a sense, yes they are Chars
@@ -137,8 +215,12 @@ class EAtom(Atom):
     def __init__(self, collect):
         self.collect = collect
 
-    def value(self, dialect_ak_escape):
-        return dialect_ak_escape(collect)
+    def value(self, dialect_ak_escape=None):
+        if dialect_ak_escape is None:
+            # these nearly always go to identifiers I think?
+            dialect_ak_escape = dialect_ak_escape_def
+
+        return dialect_ak_escape(self.collect)
 
 
 class _EscBase(Ast):
@@ -176,6 +258,9 @@ class SEscape(_EscBase):
 class String(str, Ast):
     """ Ast for plain strings so that we can
         do things like track start/end """
+
+    def __repr__(self):
+        return dumps(self)
 
 
 class EString(Ast):
@@ -296,40 +381,98 @@ class FeatureExpr(WrapsNext):
     """ Common Lisp feature expressions """
 
 
-# second phase data types (incomplete)
+# second phase abstract types (incomplete)
+# not clear we need this, I think it is probably
+# one layer of indirection too many
 
 
-class DataType:
+class Identifier(Ast):
+
+    __eq__ = _m.eq_value
+
+    def __init__(self, value):
+        self.value = value
+
+
+class Syntax(Ast):
+
+    __eq__ = _m.eq_value
+
+    def __init__(self, value):
+        self.value = value
+
+
+
+class DataType(Ast):  # FIXME naming
     """ objects that have specific semantics in certain dialects
     this provides a layer of indirection so that the choice of
     the python structure used internally can be tailored to the
     exact use case without blindly following upstream """
+
+    def caste(self, typef):
+        return typef(self.collect)
 
 
 class Cons(DataType):
     """ A single cell in a singly linked list, usually mutable. """
 
 
-class List(DataType):
+class LLike(DataType):
+
+    o, c = None, None
+    __eq__ = _m.eq_collect
+
+    def __repr__(self, depth=0, **kwargs):
+        # already have a printer for this in protcur
+        r = '\n'.join(repr(_) for _ in self.collect)
+        return self.o + r + self.c
+
+
+class List(LLike):
     """ Usually a mutable singly linked list. """
 
+    o, c = '()'
 
-class Array(DataType):
+    def __init__(self, collect):
+        self.collect = collect
+
+
+class Array(LLike):
     """ An n-dimensional array. """
 
+    o, c = '(array ', ')'
 
-class Vector(Array):
+    def __init__(self, collect):
+        self.collect = collect
+
+
+class Vector(LLike):
     """ A one dimensional array of fixed length.
     Access is expected to be O(1). """
 
+    o, c = '[]'
 
-class Set(DataType):
+    def __init__(self, collect):
+        self.collect = collect
+
+
+class Set(LLike):
     """ A mathematical set. """
 
+    o, c = '#{', '}'
 
-class Dict(DataType):
+    def __init__(self, collect):
+        self.collect = collect
+
+
+class Dict(LLike):
     """ Sometimes called a hash, sometimes called a map.
     Expectation is that access is O(1). """
+
+    o, c = '{', '}'
+
+    def __init__(self, collect):
+        self.collect = collect
 
 
 # class for pda states
@@ -353,105 +496,11 @@ class State:
 
 unp = object()  # unparsable  # cannot use None
 
+# helper for parsing elisp chars
+
 escape_hat = SEscape('^')  # needed to parse elisp escape for control ?\^?
 
-toks_base = ('(', ')', '[', ']',
-             ';', '"', "'", '`',
-             ',', '@',
-             '\n', '\t', ' ', ':', '\\', '\\', unp,
-             '{', '}',
-             '#', '|', '|',
-             ';')
-
-toks_cl = ('(', ')', unp, unp,
-           ';', '"', "'", '`',
-           ',', '@',
-           '\n', '\t', ' ', ':', '\\', '\\', unp,
-           unp, unp,
-           '#', '|', '|',
-           unp)
-
-toks_el = ('(', ')', '[', ']',
-           ';', '"', "'", '`',
-           ',', '@',
-           '\n', '\t', ' ', ':', '\\', '\\', '?',
-           unp, unp,  # FIXME uses curlies but in a different context (which doesn't need pairing)
-           '#', unp, unp,
-           unp)
-
-toks_hy = ('(', ')', '[', ']',
-           ';', '"', "'", '`',
-           '~', '@', # diff
-           '\n', '\t', ' ', ':', unp, '\\', unp,
-           '{', '}',
-           '#', unp, unp,
-           '_')
-
-toks_clj = ('(', ')', '[', ']',
-            ';', '"', "'", '`',
-            '~', '@', # diff
-            '\n', '\t', ' ', ':', unp, '\\', '\\',  # clj uses a bare backslash for char
-            '{', '}',
-            '#', unp, unp,
-            '_')
-
-toks_gui = ('(', ')', '[', ']',
-            ';', '"', "'", '`',
-            ',', '@',
-            '\n', '\t', ' ', ':', '\\', '\\', unp,
-            unp, unp,
-            '#', '|', '|',
-            ';')
-
 # tokens
-toks_template = {
-    # the naming conventions for tokens
-    # are to use beg end when a form must end with a specific token
-    # and to use to for forms that have multiple possible ends
-
-    # whitespace
-    't_newline': '\n',
-    't_tab': '\t',
-    't_space': ' ',
-
-    # lists
-    't_beg_list_p': unp,
-    't_end_list_p': unp,
-    't_beg_list_s': unp,
-    't_end_list_s': unp,
-    't_beg_list_c': unp,
-    't_end_list_c': unp,
-
-    't_beg_end_str': unp,
-    't_beg_end_aver': unp,
-
-    't_to_sharp': unp,
-    't_to_cblk_in_shrp': unp,
-    't_to_xcom_in_shrp': unp,
-
-    't_to_quote': unp,
-    't_to_quasi': unp,
-    't_to_unquote': unp,
-    't_to_splc_in_unq': unp,
-
-    't_to_keyw': unp,
-
-    't_to_esc': unp,
-    't_to_esc_in_str': unp,
-    't_to_char': unp,
-    't_to_comment': unp,
-}
-
-"""
-asdf = [toks_base, toks_cl, toks_el, toks_hy, toks_clj, toks_gui]
-order = ['t_beg_list_p', 't_end_list_p', 't_beg_list_s', 't_end_list_s', 't_to_comment', 't_beg_end_str', 't_to_quote', 't_to_quasi', 't_to_unquote', 't_to_splc_in_unq', 't_newline', 't_tab', 't_space', 't_to_keyw', 't_to_esc', 't_to_esc_in_str', 't_to_char', 't_beg_list_c', 't_end_list_c', 't_to_sharp', 't_to_cblk_in_shrp', 't_beg_end_aver', 't_to_xcom_in_shrp']
-
-from pprint import pprint
-for tup in asdf:
-    hrm = {k:v for k, v in zip(order, tup)}
-    pprint({k:hrm[k] for k in toks_template}, sort_dicts=False)  # huh apparently sort_dicts is a recent addition
-"""
-
 
 toks_common = {
     't_newline':         '\n',
@@ -469,11 +518,12 @@ toks_common = {
    #'t_to_char_in_shrp': '\\',  # TODO
    #'t_to_cblk_in_shrp': '|',
    #'t_to_xcom_in_shrp': ';',
+   #'t_to_keyw_in_shrp': ':',
     't_to_quote':        "'",
     't_to_quasi':        '`',
     't_to_unquote':      ',',
     't_to_splc_in_unq':  '@',
-    't_to_keyw':         ':',  # FIXME racket and scheme keywords don't do this
+   #'t_to_keyw':         ':',  # FIXME racket and scheme keywords don't do this
    #'t_to_esc':          '\\',
     't_to_esc_in_str':   '\\',
    #'t_to_char':         '?',
@@ -523,6 +573,9 @@ conf_cl = {
     't_to_esc':          '\\',
     't_beg_end_aver':    '|',
     't_to_cblk_in_shrp': '|',
+    # NOTE: do not use to_keyw_in_shrp for uninterned
+    # it is simple to use (sharp (keyword ...)) than
+    # to try to reconfigure this part of the reader
 }
 
 conf_el = {
@@ -562,13 +615,75 @@ conf_gui = {
 }
 
 
-if True:  # make sure we didn't accidentally forget to update a dialect
-    from itertools import zip_longest
-    def oops(b, d): print(f'misalignment or a swap {b!r} != {d!r}')
-    [ds if (bs == ds or ds == unp) else oops(bs, ds) for d in
-    (toks_cl, toks_el, toks_hy, toks_clj, toks_gui)
-     for bs, ds in zip_longest(toks_base, d, fillvalue='aaaaaaaaaaaaa')]
+# reader config
 
+mawp_def = {
+    ListP: lambda l: List(l.collect),
+    ListS: lambda l: Vector(l.collect),
+    ListC: lambda l: Dict(l.collect),
+    EAtom: lambda a: Identifier(a.value()),  # FIXME not sure if correct
+    EKeyword: lambda k: Keyword(k.value()) ,
+    Atom: lambda a: Identifier(a.value),  # FIXME TODO numbers bools etc.
+    #EString: Destring,
+    #EChar: Dechar,
+    #Char: lchar,
+}
+
+
+def walk_sxpyr(ast, walk):
+    pass
+
+
+def walk_rkt(ast, walk):
+    # FIXME I really do not like this pattern
+    # having to know about collect and value
+    # is beyond annoying
+    if isinstance(ast, Atom):
+        v = ast.value
+        if v[0].isdigit():
+            try:
+                # FIXME massive completely incorrect hack
+                nv = literal_eval(v)  # lol so dumb
+                return nv
+            except Exception as e:
+                pass
+
+        return Identifier(v)
+    elif isinstance(ast, Sharp):
+        v = ast.value  # sigh case statements would be lovely
+        if isinstance(v, Atom):
+            if v.value == 't':
+                return True
+            elif v.value == 'f':
+                return False
+        if isinstance(v, Keyword):
+            # FIXME and here the inheritance hierarchy returns
+            # to ruin your day
+            return Keyword(v.value)
+        #elif isinstance(v, Identifier):  # Atom converted before we get here
+        elif isinstance(v, Quote):
+            return Syntax(v)
+    elif isinstance(ast, EChar):
+        pass
+    elif isinstance(ast, Char):
+        pass
+    elif walk is None:  # post process after doing members
+        if isinstance(ast, _LBase):
+            return List(ast.collect)
+    else:
+        return walk(ast)
+
+    return ast
+
+
+mawp_rkt = {
+    **mawp_def,
+    ListP: lambda l: List(l.collect),
+    ListS: lambda l: List(l.collect),
+    ListC: lambda l: List(l.collect),
+    #Sharp: v_rkt,  # FIXME indication that we don't need mawp, we just need walk_help?
+    #Atom: v_rkt,
+}
 
 def configure(quote_in_symbol=False,  # True, False, SyntaxError
               additional_whitespace='',
@@ -579,8 +694,14 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
               char_auto_end=True,  # FIXME same issue  XXX not sure we need this, somehow I think racket special cased these?
               #char_name_symbol=False,  # this is what cl does
               #immutable_cons=False,  # FIXME this should be deferred
+              sharp_atom_end_only_some=False,  # FIXME I think this is how to deal w/ racket?
 
               ## tokens (common are set)
+
+              # the naming conventions for tokens
+              # are to use beg end when a form must end with a specific token
+              # and to use to for forms that have multiple possible ends
+
               t_newline='\n',
               t_tab='\t',
               t_space=' ',
@@ -595,6 +716,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
               t_to_sharp='#',
               t_to_cblk_in_shrp=unp,
               t_to_xcom_in_shrp=unp,
+              t_to_keyw_in_shrp=unp,
               t_to_quote="'",
               t_to_quasi='`',
               t_to_unquote=',',
@@ -705,7 +827,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
     def caste_keyword(collect):
         return (EKeyword(collect) if
                 [_ for _ in collect if isinstance(_, Escape)] else
-                Keyword(collect))
+                Keyword.from_collect(collect))
 
     def caste_sharp(collect):
         if collect:
@@ -869,7 +991,8 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                 return tuple()
 
             return i_resolve_pops(collect_stack, stack, char)
-        elif char in (t_end_list_p, t_end_list_s, t_end_list_c) and state_prev in (*quotelikes, s_atom, s_keyw, s_char, s_char_first):
+        elif (char in (t_end_list_p, t_end_list_s, t_end_list_c) and
+              state_prev in (*quotelikes, s_atom, s_keyw, s_char, s_char_first)):
             # multiple things end at the same time
             collect_stack[-1].append(cut)
             if state_prev != s_char_first:
@@ -1062,7 +1185,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                       state in (s_char_first, s_char) and char not in m_ends or
                       char == t_to_keyw or
                       state != s_unq_first and char == t_to_splc_in_unq or  # FIXME do we really need u1?
-                      state == s_sharp and char == t_to_sharp or  # FIXME should probably work like an FeaureExpr?
+                      state == s_sharp and char in (t_to_sharp, t_to_keyw_in_shrp) or  # FIXME should probably work like an FeaureExpr?
                       state == s_atom_verbatim and char != t_beg_end_aver or
                       state == s_pi_in_cblk and char != t_to_sharp or  # fixme confusing
                       state in (s_string, s_comm, s_cblk, s_esc, s_esc_str) and char not in scoe_complex or
@@ -1084,12 +1207,16 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                         # for another state so safe to assign state
                         # here, also required to handle the case where
                         # the loop immediately terminates
-                        state = s_keyw if char == t_to_keyw else s_atom
+                        state = s_keyw if char in (t_to_keyw, t_to_keyw_in_shrp) else s_atom
                         stack.append(state)
                         collect = []
                         collect_stack.append(collect)
+
                         if point_start is None:
                             point_start = point
+
+                        if state == s_keyw:  # don't collect the colon that starts the keyword
+                            continue
 
                     if state == s_pi_in_cblk and char != t_to_cblk_in_shrp:
                         stack.pop()

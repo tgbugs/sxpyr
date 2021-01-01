@@ -35,8 +35,35 @@ def sprint(gen, match=None):
     return res
 
 
+def test_read():
+    from sxpyr.sexp import conf_read, mawp_def, make_do_path, walk_rkt
+    read_rkt = conf_read(parse_rkt, walk_rkt)
+    parse_path_rkt = make_do_path(parse_rkt)
+    read_path_rkt = make_do_path(read_rkt)
+    p1 = git_nofork_path / 'org-mode/lisp/ob-core.el'
+    p2 = git_nofork_path / 'racket/racket/collects/compiler/embed.rkt'
+    p3 = git_nofork_path / 'racket/racket/src/cs/schemified/expander.scm'  # big p
+    wat = list(parse_path_rkt(p2))
+    asdf = list(read_path_rkt(p2))
+
+    #breakpoint()
+
+
 def test_parse(debug=False):
     # asdf
+
+    sprint(parse_cl('#"!"'))
+
+    # FIXME cl and clojure double colon and beyond
+    sprint(parse_cl('::k'))
+    sprint(parse_cl(':::k'))
+    sprint(parse_clj('::k'))
+    sprint(parse_clj(':::k'))
+
+    # FIXME racket ambiguous reading issues
+    sprint(parse_rkt('#rx"lol"'))
+    sprint(parse_rkt('#rx "lol"'))
+    sprint(parse_rkt('#hash(a b c d)'))
 
     sprint(parse_rkt(""))
     sprint(parse_rkt("#{HRM}#"))  # FIXME ambiguous, used by guile
@@ -44,6 +71,7 @@ def test_parse(debug=False):
 
     sprint(parse_rkt("(# \"lol\")"))
     sprint(parse_rkt("#"))
+    sprint(parse_rkt("##"))
 
     sprint(parse_rkt("'#:|fd\\sA|"))
 
@@ -495,10 +523,10 @@ def test_chars():
                 sprint(parser(tstr), match=[ast])
 
 
+from pathlib import Path
+git_path = Path('~/git/').expanduser()
+git_nofork_path = git_path / 'NOFORK'
 def test_paths():
-    from pathlib import Path
-    git_path = Path('~/git/').expanduser()
-    git_nofork_path = git_path / 'NOFORK'
     paths = ((git_path / 'protc/anno-tags.rkt'),
              #(git_nofork_path / 'sbcl/src/compiler/generic/early-objdef.lisp'),
              #(git_nofork_path / 'sbcl/src/code/print.lisp'),
@@ -737,6 +765,8 @@ if __name__  == '__main__':
         import sxpyr.sexp
         sxpyr.sexp.debug = True
 
-    test_parse()
+    test_read()
+    #sys.exit()
+    test_parse(debug=debug)
     test_paths()
     test_fails()
