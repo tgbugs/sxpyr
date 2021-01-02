@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from sxpyr import (conf_sxpyr,
                    conf_cl,
                    conf_el,
@@ -6,9 +7,13 @@ from sxpyr import (conf_sxpyr,
                    conf_gui,
                    conf_clj,
                    conf_hy)
+from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
+from sxpyr.sexp import conf_read
 from sxpyr import *
 
+git_path = Path('~/git/').expanduser()
+git_nofork_path = git_path / 'NOFORK'
 
 parse_common = configure()
 parse_sxpyr = configure(**conf_sxpyr)
@@ -20,13 +25,23 @@ parse_clj = configure(**conf_clj)
 parse_hy = configure(**conf_hy)
 
 
-def sprint(gen, match=None):
+def sprint(gen, match=None, fail=False):
     res = []
-    for parsed_expr in gen:
-        if printexp:
-            print('expr:', parsed_expr)
+    try:
+        for parsed_expr in gen:
+            if printexp:
+                print('expr:', parsed_expr)
 
-        res.append(parsed_expr)
+            res.append(parsed_expr)
+
+        if fail:
+            assert False, 'should have failed'
+    except SyntaxError as e:
+        if not fail:
+            raise e
+        else:
+            print(f'task failed succssfully for ??? with {e}')
+            return
 
     #print(res)
     if match is not None:
@@ -36,17 +51,98 @@ def sprint(gen, match=None):
 
 
 def test_read():
-    from sxpyr.sexp import conf_read, mawp_def, make_do_path, walk_rkt
-    read_rkt = conf_read(parse_rkt, walk_rkt)
-    parse_path_rkt = make_do_path(parse_rkt)
-    read_path_rkt = make_do_path(read_rkt)
-    p1 = git_nofork_path / 'org-mode/lisp/ob-core.el'
-    p2 = git_nofork_path / 'racket/racket/collects/compiler/embed.rkt'
-    p3 = git_nofork_path / 'racket/racket/src/cs/schemified/expander.scm'  # big p
-    wat = list(parse_path_rkt(p2))
-    asdf = list(read_path_rkt(p2))
+    read_rkt = conf_read(parse_rkt, WalkRkt)
+    read_el = conf_read(parse_el, WalkEl)
 
-    #breakpoint()
+    # elisp chars
+    a = next(read_el(r'?\^\M-\N{colon}'))
+    b = next(read_el(r'?\^\M-:'))
+    c = next(read_el(r'?\C-\M-:'))
+    d = next(read_el(r'?\C-\M-\N{U+003a}'))
+    assert a == b == c == d, f'{a} {b} {c} {d}'
+    assert a.elc_int == 201326650, f'{a.elc_int} != 201326650'
+
+    c1 = next(read_el(r'?\N{U+003A}'))
+    c2 = next(read_el('?:'))
+    assert c1 == c2, '{c1} != {c2}'
+
+    # quasi-things and un-things
+    sprint(read_rkt("#`(a #,b)"))
+    sprint(read_rkt("#`(a #,@b)"))
+
+    sprint(read_rkt("#'(a #,b)"), fail=True)
+    sprint(read_rkt("#'(a #,@b)"), fail=True)
+
+    sprint(read_rkt("`(a #,b)"), fail=True)
+    sprint(read_rkt("`(a #,@b)"), fail=True)
+
+    sprint(read_rkt("#`(a ,b)"), fail=True)
+    sprint(read_rkt("#`(a ,@b)"), fail=True)
+
+    sprint(read_rkt("`(a ,@(b))"))
+    sprint(read_rkt("`(a ,@(b `(c ,(d))))"))
+    sprint(read_rkt("`(a ,@(b `(c ,(d `(e ,@(f))))))"))
+    sprint(read_rkt("'(a ,@(b))"), fail=True)
+    sprint(read_rkt("`(a ,@(b ,(c)))"), fail=True)
+
+    sprint(read_rkt("`(a ,(b))"))
+    sprint(read_rkt("`(a ,(b `(c ,(d))))"))
+    sprint(read_rkt("`(a ,(b `(c ,(d `(e ,(f))))))"))
+    sprint(read_rkt("'(a ,(b))"), fail=True)
+    sprint(read_rkt("`(a ,(b ,(c)))"), fail=True)
+
+    sprint(read_rkt("#`(a #,@(b))"))
+    sprint(read_rkt("#`(a #,@(b #`(c #,(d))))"))
+    sprint(read_rkt("#`(a #,@(b #`(c #,(d #`(e #,@(f))))))"))
+    sprint(read_rkt("#'(a #,@(b))"), fail=True)
+    sprint(read_rkt("#`(a #,@(b #,(c)))"), fail=True)
+
+    sprint(read_rkt("#`(a #,(b))"))
+    sprint(read_rkt("#`(a #,(b #`(c #,(d))))"))
+    sprint(read_rkt("#`(a #,(b #`(c #,(d #`(e #,(f))))))"))
+    sprint(read_rkt("#'(a #,(b))"), fail=True)
+    sprint(read_rkt("#`(a #,(b #,(c)))"), fail=True)
+
+
+def test_read_paths():
+    from sxpyr.sexp import make_do_path
+    def make_pr(parse, walk_cls):
+        read = conf_read(parse, walk_cls)
+        parse_path = make_do_path(parse)
+        read_path = make_do_path(read)
+        return read, parse_path, read_path
+
+    def dol(pr, path):
+        _, p, r = pr
+        try:
+            return list(p(path)), list(r(path))
+        except RecursionError:
+            pass
+        except Exception as e:
+            raise e
+
+        raise RecursionError(f'exception in {path} {e}') #from e
+
+    pr_rkt = read_rkt, parse_path_rkt, read_path_rkt = make_pr(parse_rkt, WalkRkt)
+    pr_el = read_el, parse_path_el, read_path_el = make_pr(parse_el, WalkEl)
+    pr_cl = read_cl, parse_path_cl, read_path_cl = make_pr(parse_cl, WalkCl)
+
+    pe1 = git_nofork_path / 'org-mode/lisp/ob-core.el'
+    pe2 = git_nofork_path / 'emacs/test/src/syntax-tests.el'
+    pe3 = git_nofork_path / 'emacs/lisp/simple.el' # anything but
+    pr1 = git_nofork_path / 'racket/racket/collects/compiler/embed.rkt'
+    pr2 = git_nofork_path / 'racket/racket/src/cs/schemified/expander.scm'  # big p
+
+    p_rkt1, r_rkt1 = dol(pr_rkt, pr1)
+
+    p_el1, r_el1 = dol(pr_el, pe1)
+    p_el2, r_el2 = dol(pr_el, pe2)
+    p_el3, r_el3 = dol(pr_el, pe3)
+
+    p_rkt1, p_el1, p_el2, p_el3 = None, None, None, None  # debug repr slowness
+
+    breakpoint()
+
 
 
 def test_parse(debug=False):
@@ -95,7 +191,7 @@ def test_parse(debug=False):
 
     sprint(parse_rkt('#| #\; |#'))
 
-    sprint(parse_rkt('#\\" lol'), match=[Char('"'), Atom('lol')])
+    sprint(parse_rkt('#\\" lol'), match=[CharSpec('"'), Atom('lol')])
     sprint(parse_rkt('(#\\))'))
     sprint(parse_rkt(r'"."'))
     sprint(parse_rkt(r'#\0'))
@@ -444,23 +540,24 @@ def test_chars():
         return inner
 
     test_suffixes = (
-              ("\\", ListP.from_elements(Char('\\'),)),
-              (" ", ListP.from_elements(Char(' '),)),
-              (";", ListP.from_elements(Char(';'),)),
-              (")", ListP.from_elements(Char(')'),)),
-              ("z", ListP.from_elements(Char('z'),)),  # can't use a because emacs -> x07
-              ("  a", ListP.from_elements(Char(' '), Atom('a'))),
-              ("  'a", ListP.from_elements(Char(' '), Quote(Atom('a')))),
-              (") a", ListP.from_elements(Char(')'), Atom('a'))),
-              (" 'a", ListP.from_elements(Char(' '), Quote(Atom('a')))),
-              (")'a", ListP.from_elements(Char(')'), Quote(Atom('a')))),
-              (" a", ListP.from_elements(Char(' '), Atom('a'))),
-              (";a", ListP.from_elements(Char(';'), Atom('a'))),
-              (")a", ListP.from_elements(Char(')'), Atom('a'))),
-              ("'a", ListP.from_elements(Char("'"), Atom('a'))),
-              ("aa", ListP.from_elements(Char('aa'),)),  # XXX REMINDER that non-existent char errors are NO LONGER reader errors
-              (("y", "z"), ListP.from_elements(Char('y'), Char('z'))),
-              ("newline", ListP.from_elements(Char('newline'),)),
+              ("\\", ListP.from_elements(CharSpec('\\'),)),
+              (" ", ListP.from_elements(CharSpec(' '),)),
+              (";", ListP.from_elements(CharSpec(';'),)),
+              (")", ListP.from_elements(CharSpec(')'),)),
+              ("z", ListP.from_elements(CharSpec('z'),)),  # can't use a because emacs -> x07
+              ("  a", ListP.from_elements(CharSpec(' '), Atom('a'))),
+              ("  'a", ListP.from_elements(CharSpec(' '), Quote(Atom('a')))),
+              (") a", ListP.from_elements(CharSpec(')'), Atom('a'))),
+              (" 'a", ListP.from_elements(CharSpec(' '), Quote(Atom('a')))),
+              (")'a", ListP.from_elements(CharSpec(')'), Quote(Atom('a')))),
+              (" a", ListP.from_elements(CharSpec(' '), Atom('a'))),
+              (";a", ListP.from_elements(CharSpec(';'), Atom('a'))),
+              (")a", ListP.from_elements(CharSpec(')'), Atom('a'))),
+              ("'a", ListP.from_elements(CharSpec("'"), Atom('a'))),
+              ("aa", ListP.from_elements(CharSpec('aa'),)),  # XXX REMINDER that non-existent char errors are NO LONGER reader errors
+              (("y", "z"), ListP.from_elements(CharSpec('y'), CharSpec('z'))),
+              ("newline", ListP.from_elements(CharSpec('newline'),)),
+              ("SpAcE", ListP.from_elements(CharSpec('space'),)),
               )
     effs = dict(
         tcq = make_test_char('?'),
@@ -499,34 +596,31 @@ def test_chars():
                     pass
             elif key == 'tcqe':
                 if ast is not None:
-                    ast = ast.from_elements(*(EChar([SEscape(_._value)])
-                                              if isinstance(_, Char)
+                    ast = ast.from_elements(*(ECharSpec([SEscape(_._value)])
+                                              if isinstance(_, CharSpec)
                                               else _ for _ in ast.collect))
 
                 # a number of these now read without error and the
                 # fact that there is no such charachter is deferred
                 if string == ' a':
-                    ast = ListP.from_elements(EChar([SEscape(' '), 'a']),)
+                    ast = ListP.from_elements(ECharSpec([SEscape(' '), 'a']),)
                 elif string == ';a':
-                    ast = ListP.from_elements(EChar([SEscape(';'), 'a']),)
+                    ast = ListP.from_elements(ECharSpec([SEscape(';'), 'a']),)
                 elif string == ')a':
-                    ast = ListP.from_elements(EChar([SEscape(')'), 'a']),)
+                    ast = ListP.from_elements(ECharSpec([SEscape(')'), 'a']),)
                 elif string == '\'a':
-                    ast = ListP.from_elements(EChar([SEscape('\''), 'a']),)
+                    ast = ListP.from_elements(ECharSpec([SEscape('\''), 'a']),)
                 elif string == 'aa':
-                    ast = ListP.from_elements(EChar([SEscape('a'), 'a']),)
+                    ast = ListP.from_elements(ECharSpec([SEscape('a'), 'a']),)
                 elif string == 'newline':
-                    ast = ListP.from_elements(EChar([SEscape('n'), *'ewline']),)
+                    ast = ListP.from_elements(ECharSpec([SEscape('n'), *'ewline']),)
 
                 sprint(parser(tstr), match=[ast])
             else:
                 sprint(parser(tstr), match=[ast])
 
 
-from pathlib import Path
-git_path = Path('~/git/').expanduser()
-git_nofork_path = git_path / 'NOFORK'
-def test_paths():
+def test_parse_paths():
     paths = ((git_path / 'protc/anno-tags.rkt'),
              #(git_nofork_path / 'sbcl/src/compiler/generic/early-objdef.lisp'),
              #(git_nofork_path / 'sbcl/src/code/print.lisp'),
@@ -766,7 +860,8 @@ if __name__  == '__main__':
         sxpyr.sexp.debug = True
 
     test_read()
-    #sys.exit()
+    test_read_paths()
+    sys.exit()
     test_parse(debug=debug)
-    test_paths()
+    test_parse_paths()
     test_fails()

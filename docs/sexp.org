@@ -22,6 +22,11 @@ Some hypotheses from evolutionary biology.
    literals are not followed by whitespace is an extremely rare
    environment so no one reports bugs about them since they are fairly
    easy to fix, just add whitespace.
+
+In the second phase the major contributors to complexity due to diversity are.
+1. character literals
+2. number literals
+
 * Reading behavior
 Bold entries are *wat*.
 

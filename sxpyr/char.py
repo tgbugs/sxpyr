@@ -25,32 +25,44 @@ class UnicodeName(KeyChar):
     """ Elisp madness. """
 
 
-class MetaNeedDash(KeyChar):
+class NeedDash(KeyChar):
+    """ Sigh. """
+
+
+class MetaNeedDash(NeedDash):
     """ Alt to the rest of us. """
+    bit = 2 ** 27
 
 
-class HyperNeedDash(KeyChar):
+class HyperNeedDash(NeedDash):
     """ ??? to the rest of us. """
+    bit = 2 ** 24
 
 
-class EhNeedDash(KeyChar):
-    """ ??? to the rest of us. """
+class AltNeedDash(NeedDash):
+    """ Alt to the rest of us.
+        Not sure about relation to Meta here. """
+    bit = 2 ** 22
 
 
 class ControlHat(KeyChar):
     """ Maybe this is cmd on macs? No idea. """
+    bit = 2 ** 26
 
 
-class ControlNeedDash(KeyChar):
+class ControlNeedDash(NeedDash):
     """ Maybe this is cmd on macs? No idea. """
+    bit = 2 ** 26
 
 
-class ShiftNeedDash(KeyChar):
+class ShiftNeedDash(NeedDash):
     """ ?\S- ?? No idea. """
+    bit = 2 ** 25
 
 
-class SpaceOrSuperNeedDash(KeyChar):
+class SpaceOrSuperNeedDash(NeedDash):
     """ ?\s- ?? No idea. """
+    bit = 2 ** 23
 
 
 class Octal(KeyChar):
@@ -92,7 +104,7 @@ cee_el = {
     # even reading chars at all induces way more complexity
     # than I originally wanted
     **cee_base,
-    **cee_oct,
+    #**cee_oct,
     'd': '\x7f',  # delete aka rubout
     'e': '\x1b',  # escape
     's': SpaceOrSuperNeedDash,  # space
@@ -101,40 +113,41 @@ cee_el = {
     'M': MetaNeedDash,     # and emacs denotes this with a -1
     'S': ShiftNeedDash,
     'H': HyperNeedDash,
-    'A': EhNeedDash,
+    'A': AltNeedDash,
     'N': UnicodeName,  # must be followed by {...}
     '^': ControlHat,  # emacs denotes this with a -1
 }
 
 cee_gui = {
     **cee_base,
-    **cee_oct,
+    #**cee_oct,
+}
+
+
+known_multi = {
+    # from Racket, this is how racket manages to implement the
+    # char lit reader, they have a closed set of valid multichar
+    # charachters whereas cl has an arbitrary number because
+    # syntactically it allows any symbol name and then fails if a
+    # char by that name is not know to the implementation
+    # except of course for all the \u unicode escapes
+    # NOTE elisp is the only one that supports ?\x all the rest
+    # only support \u or #\u, except hy, which is py which has no chars
+    'backspace': '\x08',  # aka '\b'
+    'newline': '\x0a',    # ala '\n'
+    'linefeed': '\x0a',   # ala '\n'
+    'nul': '\x00',
+    'null': '\x00',       # "\u0000" "\x00"
+    'page': '\x0c',       # \f
+    'return': '\x0d',     # \r
+    'rubout': '\x7f',     # aka delete
+    'space': '\x20',
+    'tab': '\x09',        # \t
+    'vtab': '\x0b',       # \v
 }
 
 
 def dialect_char(collect):
-    known_multi = {
-        # from Racket, this is how racket manages to implement the
-        # char lit reader, they have a closed set of valid multichar
-        # charachters whereas cl has an arbitrary number because
-        # syntactically it allows any symbol name and then fails if a
-        # char by that name is not know to the implementation
-        # except of course for all the \u unicode escapes
-        # NOTE elisp is the only one that supports ?\x all the rest
-        # only support \u or #\u, except hy, which is py which has no chars
-        'backspace': '\x08',  # aka '\b'
-        'newline': '\x0a',    # ala '\n'
-        'linefeed': '\x0a',   # ala '\n'
-        'nul': '\x00',
-        'null': '\x00',       # "\u0000" "\x00"
-        'page': '\x0c',       # \f
-        'return': '\x0d',     # \r
-        'rubout': '\x7f',     # aka delete
-        'space': '\x20',
-        'tab': '\x09',        # \t
-        'vtab': '\x0b',       # \v
-    }
-
     class self: """ lol """
 
     #assert len(collect) == 1 or , collect

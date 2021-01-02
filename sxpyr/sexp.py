@@ -1,3 +1,7 @@
+# parse
+# walk
+# caste
+
 __version__ = '0.0.1'
 
 from ast import literal_eval
@@ -25,12 +29,12 @@ def make_do_path(do, chunksize=4096):
     return do_path
 
 
-def conf_read(parser, walk_help):
-    def skip(v):
-        return [c for c in (Comment, XComment, BComment)
-                if isinstance(v, c)]
+def conf_read(parser, walk_cls):
+    #def skip(v):
+        #return [c for c in (Comment, XComment, BComment)
+                #if isinstance(v, c)]
 
-    def walk(ast):
+    def _walk(ast):
         #print('walk:', ast)
         if [_ for _ in (Sharp, Quote, IQuote, UQuote, SUQuote)
             if isinstance(ast, _)]:
@@ -53,10 +57,13 @@ def conf_read(parser, walk_help):
             #return ast
 
     def read(gen):
+        walk = walk_cls()  # avoid any whiff of threading issues
         exp_gen = parser(gen)
         for expression in exp_gen:
-            if not skip(expression):
-                transformed = walk_help(expression, walk)
+            if debug:
+                print('read:', expression)
+            if not walk._skip(expression):
+                transformed = walk(expression)
                 yield transformed
 
     return read
@@ -95,6 +102,14 @@ class Ast:
             #breakpoint()
             raise Exception('oops')
 
+    def caste(self, typef):
+        """ the final form of the ast must have been
+        achieved so that it has a defined value """
+        if type(self.value) == type(self.__repr__):
+            raise TypeError('self.value has not been fully factored yet!')
+
+        return typef(self.value)
+
     def __hash__(self):
         return hash((self.__class__, self.value))
 
@@ -118,6 +133,13 @@ class Ast:
         # where Keyword is defined due to python issues with __main__
         # vs module imports keywords are self interning or somthing
         # like that so they are not as big an issue as symbols/atoms
+
+    @classmethod
+    def from_ast(cls, ast):
+        # FIXME TODO homogenous would be to pass collect
+        # along and/or track the ast that it came from
+        # so that the loc data can travel along
+        return cls(ast.value)
 
 
 class _LBase(Ast):
@@ -280,18 +302,18 @@ class EString(Ast):
                  else c for c in self.collect])
 
 
-class Char(Ast):
+class CharSpec(Ast):
 
-    __eq__ = _m.eq__value
+    __eq__ = _m.eq_value
 
     def __init__(self, collect):
-        self._value = ''.join(collect)
+        self.value = ''.join(collect)
 
-    def value(self, dialect_char):
-        return dialect_char(self._value)
+    #def value(self, dialect_char):
+        #return dialect_char(self._value)
 
 
-class EChar(Char):
+class ECharSpec(CharSpec):
     """ chars with escape sequences """
 
     __eq__ = _m.eq_collect
@@ -304,6 +326,8 @@ class EChar(Char):
                          if isinstance(c, SEscape)
                          else c for c in self.collect])
 
+        # FIXME a bit more complex than this I think
+        # maybe need dialect_char_esc or similar?
         return dialect_char(value)
 
 
@@ -387,20 +411,46 @@ class FeatureExpr(WrapsNext):
 
 
 class Identifier(Ast):
-
     __eq__ = _m.eq_value
-
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, value): self.value = value
 
 
-class Syntax(Ast):
-
+class Boolean(Ast):
     __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
 
-    def __init__(self, value):
-        self.value = value
 
+class Char(Ast):
+    """ the char spec fully processed down
+    to a single charachter or value """
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class LangLine(Ast):
+    """ the racket lang line #lang """
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class Syntax(WrapsNext):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class ISyntax(WrapsNext):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class USyntax(WrapsNext):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class SUSyntax(WrapsNext):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
 
 
 class DataType(Ast):  # FIXME naming
@@ -408,9 +458,6 @@ class DataType(Ast):  # FIXME naming
     this provides a layer of indirection so that the choice of
     the python structure used internally can be tailored to the
     exact use case without blindly following upstream """
-
-    def caste(self, typef):
-        return typef(self.collect)
 
 
 class Cons(DataType):
@@ -420,11 +467,25 @@ class Cons(DataType):
 class LLike(DataType):
 
     o, c = None, None
-    __eq__ = _m.eq_collect
+    __eq__ = _m.eq_value
+
+    @classmethod
+    def from_ast(cls, ast):
+        # FIXME TODO homogenous would be to pass collect
+        # along and/or track the ast that it came from
+        # so that the loc data can travel along
+        return cls(ast.collect)
+
+    def __init__(self, value):
+        self._value = value
+
+    @property
+    def value(self):
+        return self._value
 
     def __repr__(self, depth=0, **kwargs):
         # already have a printer for this in protcur
-        r = '\n'.join(repr(_) for _ in self.collect)
+        r = '\n'.join(repr(_) for _ in self.value)
         return self.o + r + self.c
 
 
@@ -433,17 +494,11 @@ class List(LLike):
 
     o, c = '()'
 
-    def __init__(self, collect):
-        self.collect = collect
-
 
 class Array(LLike):
     """ An n-dimensional array. """
 
     o, c = '(array ', ')'
-
-    def __init__(self, collect):
-        self.collect = collect
 
 
 class Vector(LLike):
@@ -452,17 +507,11 @@ class Vector(LLike):
 
     o, c = '[]'
 
-    def __init__(self, collect):
-        self.collect = collect
-
 
 class Set(LLike):
     """ A mathematical set. """
 
     o, c = '#{', '}'
-
-    def __init__(self, collect):
-        self.collect = collect
 
 
 class Dict(LLike):
@@ -471,8 +520,22 @@ class Dict(LLike):
 
     o, c = '{', '}'
 
-    def __init__(self, collect):
-        self.collect = collect
+
+class ByteCode(LLike):
+    """ elisp can read bytecode literals """
+
+    o, c = '#[', ']'
+
+
+def plist_to_dict(plist):
+    # use with Ast.caste
+    if len(plist) % 2 != 0:
+        raise SyntaxError('plist is not a plist')
+    try:
+        return dict(zip(plist[::2], plist[1::2]))
+    except TypeError as e:
+        breakpoint()
+        pass
 
 
 # class for pda states
@@ -587,6 +650,7 @@ conf_el = {
 }
 
 conf_hy = {
+    'eval_collection_literals': True,  # note this is really eval lists, sets, dicts
     **toks_common,
     **toks_b_list_sc,
     't_to_keyw':         ':',
@@ -596,6 +660,16 @@ conf_hy = {
 
 conf_clj = {
     'quote_in_symbol': True,
+    'eval_collection_literals': True,  # this is beyond the reader, cl, el, rkt, scm, are False for this
+    # TODO this could also be called implicitly_quote_collections, very annoying behavior ...
+    # since it breaks equivalence between #(1 2 (+ 1 2)) and (vector 1 2 (+ 1 2))
+    # and implies that #() is not simply a macro that expands to (vector )
+    # see https://nullprogram.com/blog/2012/07/17/
+    # on the other hand, it is safer because you know that the printed output
+    # of certain structures won't suddenly be able to execute arbitrary code
+    # if it is evaled again, then again, if you eval the output of quote you
+    # can pwn yourself much more easily, so I don't see what the issue is
+    # macros that work like string vs regular macros that expand and eval
     'additional_whitespace': ',',
     **toks_common,
     **toks_b_list_sc,
@@ -615,75 +689,204 @@ conf_gui = {
 }
 
 
-# reader config
-
-mawp_def = {
-    ListP: lambda l: List(l.collect),
-    ListS: lambda l: Vector(l.collect),
-    ListC: lambda l: Dict(l.collect),
-    EAtom: lambda a: Identifier(a.value()),  # FIXME not sure if correct
-    EKeyword: lambda k: Keyword(k.value()) ,
-    Atom: lambda a: Identifier(a.value),  # FIXME TODO numbers bools etc.
-    #EString: Destring,
-    #EChar: Dechar,
-    #Char: lchar,
-}
+# walk
 
 
-def walk_sxpyr(ast, walk):
-    pass
+class Walk:
 
+    _recurse_funs = (
+        (_LBase, '_lbase'),
+        (Sharp, '_sharp'),  # process this up here
+        (IQuote, '_iquote'),
+        (WrapsNext, '_wraps_next'),  # lol I actually had it implemented already
+        )
 
-def walk_rkt(ast, walk):
-    # FIXME I really do not like this pattern
-    # having to know about collect and value
-    # is beyond annoying
-    if isinstance(ast, Atom):
-        v = ast.value
-        if v[0].isdigit():
-            try:
-                # FIXME massive completely incorrect hack
-                nv = literal_eval(v)  # lol so dumb
-                return nv
-            except Exception as e:
-                pass
+    _type_funs = (
+        (ListP, 'listp'),
+        (ListS, 'lists'),
+        (ListC, 'listc'),
 
-        return Identifier(v)
-    elif isinstance(ast, Sharp):
-        v = ast.value  # sigh case statements would be lovely
-        if isinstance(v, Atom):
-            if v.value == 't':
-                return True
-            elif v.value == 'f':
-                return False
-        if isinstance(v, Keyword):
-            # FIXME and here the inheritance hierarchy returns
-            # to ruin your day
-            return Keyword(v.value)
-        #elif isinstance(v, Identifier):  # Atom converted before we get here
-        elif isinstance(v, Quote):
-            return Syntax(v)
-    elif isinstance(ast, EChar):
-        pass
-    elif isinstance(ast, Char):
-        pass
-    elif walk is None:  # post process after doing members
-        if isinstance(ast, _LBase):
-            return List(ast.collect)
-    else:
+        (EAtom, 'eatom'),  # FIXME escapse first because they are sco the
+        (Atom, 'atom'),    # non-escaped version, which is probably wrong
+        (EKeyword, 'ekeyword'),
+        (Keyword, 'keyword'),
+        (ECharSpec, 'echarspec'),
+        (CharSpec, 'charspec'),
+        (EString, 'estring'),
+        (String, 'string'),
+
+        (Sharp, 'sharp'),  # for completeness, but this is rarely used
+        (Quote, 'quote'),
+        (IQuote, 'iquote'),
+        (UQuote, 'uquote'),
+        (SUQuote, 'suquote'),
+    )
+
+    _iq_funs = (
+        (UQuote, '_uq_any'),
+        (SUQuote, '_uq_any'),
+    )
+
+    _sh_funs = (
+        (ListP, 'sh_lstp'),
+        (ListS, 'sh_lsts'),
+        (ListC, 'sh_lstc'),
+
+        (EAtom, 'sh_eatm'),
+        (Atom, 'sh_atom'),
+        (EKeyword, 'sh_ekey'),
+        (Keyword, 'sh_keyw'),
+        (EString, 'sh_estr'),
+        (String, 'sh_strn'),
+
+        (Quote, 'sh_quot'),
+        (IQuote, 'sh_iqot'),
+        (UQuote, 'sh_uqot'),
+        (SUQuote, 'sh_sunq'),
+    )
+
+    def __init__(self, casters=None):
+        self._uquote, self._suquote = self.uquote, self.suquote
+
+    def __call__(self, ast, recurse=True):
+
+        if recurse:
+            for cls, attr in self._recurse_funs:
+                if isinstance(ast, cls):
+                    # have to use getattr so that we can dynamically
+                    # reassing the function names for nested values
+                    fun = getattr(self, attr)
+                    ast = fun(ast)
+                    break  # duh
+
+        for cls, attr in self._type_funs:
+            if isinstance(ast, cls):
+                fun = getattr(self, attr)
+                return fun(ast)
+
+        # TODO do we caste here or do we walk again?
+        # yes we could do this all in a single pass
+        # inside the parser and not have to walk over
+        # this 3 times, but it is much easier to understand
+        # what is going on when we do it this way and if
+        # we want it to go faster we can figure out
+        # how to write the transform using this saner
+        # version as a reference
+        return ast
+
+    @staticmethod
+    def _skip(ast):
+        return [c for c in (Comment, XComment, BComment)
+                if isinstance(ast, c)]
+
+    def _lbase(self, ast):
+        recollect = [self(_) for _ in ast.collect
+                     if not self._skip(_)]
+        return ast.__class__(recollect)
+
+    def _wraps_next(walk, ast):
+        if debug:
+            print('wn:', ast)
+        revalue = walk(ast.value)
+        return ast.__class__(revalue)
+
+    def _sharp(self, ast):
+        # FIXME TODO do we run the first pass descent here or not? 
+        # really not sure ...
+        # we can't run it after because people could have changed
+        # the types, if we don't run it or try to run it after or
+        # change the behavior to return None to signal no change
+        # then we could run the standard transformations
+        # answer: two examples make it clear that we cannot
+        # run these before, #() will be caste to second layer
+        # incorrectly, and other issues, the right thing to do
+        # is have the default be to run the unshed function so
+        # that it is accessible via super if needed, by default
+        # this means that the sharp is simply ignored as if it
+        # does not exist
+        # ast = self._wraps_next(ast)
+        if debug:
+            print('rsharp:', ast)
+        walk = self
+        value = ast.value
+        for cls, attr in self._sh_funs:
+            if isinstance(value, cls):
+                fun = getattr(self, attr)
+                ast = fun(value)
+                if isinstance(ast, Sharp):  # prevent infinite recursion
+                    return ast
+                else:
+                    # walk is applied after sharp acts locally if the
+                    # the function did not simply restore the sharp
+                    # because it doesn't know what to do with it at
+                    # this phase
+                    return walk(ast)
+        else:
+            raise NotImplementedError(f'missed something {ast}')
+
         return walk(ast)
 
-    return ast
+    def _iquote(self, ast):
+        # fake dynamic variables, non-threadsafe 
+        try:
+            # can't += because wraps next will match before these
+            self._recurse_funs = self._iq_funs + self._recurse_funs
+            self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
+            if debug: print('enter iqot')
+            return self._wraps_next(ast)
+        finally:
+            self._recurse_funs = self.__class__._recurse_funs
+            self.uquote, self.suquote = self._uquote, self._suquote
+            if debug: print('leave iqot')
+
+    def _uq_any(self, ast):
+        # fake dynamic variables, non-threadsafe 
+        try:
+            self._recurse_funs = self.__class__._recurse_funs
+            self.uquote, self.suquote = self._uquote, self._suquote
+            if debug: print('enter uqot')
+            return self._wraps_next(ast)
+        finally:
+            self._recurse_funs = self._iq_funs + self._recurse_funs
+            self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
+            if debug: print('leave uqot')
+
+    # override these per dialect
+    def eatom     (self, ast): return ast
+    def atom      (self, ast): return ast
+    def ekeyword  (self, ast): return ast
+    def keyword   (self, ast): return ast
+    def echarspec (self, ast): return ast
+    def charspec  (self, ast): return ast
+    def estring   (self, ast): return ast
+    def string    (self, ast): return ast
+    def quote     (self, ast): return ast
+    def iquote    (self, ast): return ast
+    def iq_uqot   (self, ast): return ast
+    def iq_sunq   (self, ast): return ast
+    def uquote    (self, ast): raise SyntaxError('unquote not in quasiquote')
+    def suquote   (self, ast): raise SyntaxError('unquote splicing not in quasiquote')
+    def listp     (self, ast): return List.from_ast(ast)  # pretty much everyone does this
+    def lists     (self, ast): return ast
+    def listc     (self, ast): return ast
+    def sharp     (self, ast): return ast
+    def sh_lstp   (self, ast): return self.listp(ast)
+    def sh_lsts   (self, ast): return self.listp(ast)
+    def sh_lstc   (self, ast): return self.listp(ast)
+    def sh_eatm   (self, ast): return self.eatom(ast)
+    def sh_atom   (self, ast): return self.atom(ast)
+    def sh_ekey   (self, ast): return self.ekeyword(ast)
+    def sh_keyw   (self, ast): return self.keyword(ast)
+    def sh_estr   (self, ast): return self.estring(ast)
+    def sh_strn   (self, ast): return self.string(ast)
+    def sh_quot   (self, ast): return self.quote(ast)
+    def sh_iqot   (self, ast): return self.iquote(ast)
+    def sh_uqot   (self, ast): return self.uquote(ast)
+    def sh_sunq   (self, ast): return self.suquote(ast)
+    # TODO iq_sh_uqot
 
 
-mawp_rkt = {
-    **mawp_def,
-    ListP: lambda l: List(l.collect),
-    ListS: lambda l: List(l.collect),
-    ListC: lambda l: List(l.collect),
-    #Sharp: v_rkt,  # FIXME indication that we don't need mawp, we just need walk_help?
-    #Atom: v_rkt,
-}
+# configure the parser
 
 def configure(quote_in_symbol=False,  # True, False, SyntaxError
               additional_whitespace='',
@@ -803,16 +1006,6 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
     del state_names
 
 
-    def plist_to_dict(plist):
-        # FIXME need a way to sanely control curlies for Racket vs clj/hy
-        if len(plist) % 2 != 0:
-            raise SyntaxError('plist is not a plist')
-        try:
-            return dict(zip(plist[::2], plist[1::2]))
-        except TypeError as e:
-            breakpoint()
-            pass
-
     def caste_string(collect):
         try:
             return String(''.join(collect))  # FIXME syntax loc
@@ -855,9 +1048,10 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
         elif state == s_comment_x: val = XComment.from_collect(collect)
         elif state == s_feat_x: val = FeatureExpr.from_collect(collect)  # TODO override
         elif state == s_atom_verbatim: val = caste_atom(collect)  # cl vs rr different behavior '|a \ b| '|a  b|
-        elif state in (s_char_first, s_char): val = (EChar(collect)
-                                      if [_ for _ in collect if isinstance(_, SEscape)] else
-                                      Char(collect))
+        elif state in (s_char_first, s_char): val = (
+                ECharSpec(collect)
+                if [_ for _ in collect if isinstance(_, SEscape)] else
+                CharSpec(collect))
         # XXX if you hit this error with bos at eof DO NOT ADD bos here!
         else: raise NotImplementedError(f'Unknown state: {state} {collect}')
         # bind start and end points here for simplicity
