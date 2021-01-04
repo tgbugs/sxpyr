@@ -9,13 +9,14 @@ from sxpyr import (conf_sxpyr,
                    conf_hy)
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
-from sxpyr.sexp import conf_read
+from sxpyr.sexp import conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast
 from sxpyr import *
 
 git_path = Path('~/git/').expanduser()
 git_nofork_path = git_path / 'NOFORK'
 
 parse_common = configure()
+parse_plist = configure(**conf_plist)
 parse_sxpyr = configure(**conf_sxpyr)
 parse_cl = configure(**conf_cl)
 parse_el = configure(**conf_el)
@@ -123,6 +124,11 @@ def test_read_paths():
 
         raise RecursionError(f'exception in {path} {e}') #from e
 
+
+    pr_common = read, parse_path, read_path = make_pr(parse_common, Walk)
+
+    pr_pl = read_pl, parse_path_pl, read_path_pl = make_pr(parse_plist, WalkPl)  # FIXME WalkMax?
+
     pr_rkt = read_rkt, parse_path_rkt, read_path_rkt = make_pr(parse_rkt, WalkRkt)
     pr_el = read_el, parse_path_el, read_path_el = make_pr(parse_el, WalkEl)
     pr_cl = read_cl, parse_path_cl, read_path_cl = make_pr(parse_cl, WalkCl)
@@ -132,6 +138,17 @@ def test_read_paths():
     pe3 = git_nofork_path / 'emacs/lisp/simple.el' # anything but
     pr1 = git_nofork_path / 'racket/racket/collects/compiler/embed.rkt'
     pr2 = git_nofork_path / 'racket/racket/src/cs/schemified/expander.scm'  # big p
+
+    p_1, r_1 = dol(pr_pl, ps1)
+    def cf(ast):
+        if isinstance(ast, PList):
+            return plist_to_dict(ast.value)
+        elif isinstance(ast, Ast):
+            return ast.value
+        else:
+            return ast
+
+    c_1 = [_.caste(cf) for _ in r_1]
 
     p_rkt1, r_rkt1 = dol(pr_rkt, pr1)
 

@@ -362,3 +362,7 @@ class WalkEl(Walk):
         return Char(nv)
 
         #return ast.value(lambda v:v, self._compute_escape_value)
+
+
+class WalkUnion(Walk):
+    """ All together now! """

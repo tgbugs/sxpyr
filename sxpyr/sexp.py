@@ -103,8 +103,13 @@ class Ast:
             raise Exception('oops')
 
     def caste(self, typef):
-        """ the final form of the ast must have been
+        """ Recursively caste all nested forms.
+
+        the final form of the ast must have been
         achieved so that it has a defined value """
+        # if your ast is not fully resolved this will cause an error
+        # down the line, so we just error here
+
         if type(self.value) == type(self.__repr__):
             raise TypeError('self.value has not been fully factored yet!')
 
@@ -183,6 +188,12 @@ class Keyword(Ast):
     # of them into Atom
 
     __eq__ = _m.eq_value
+    __hash__ = Ast.__hash__  # would someone care to explain to me why
+                             # this doesn't inherit ???
+                             # https://bugs.python.org/issue1549 sigh
+                             # so much for trying to be performant
+                             # just use branches inside the methods
+                             # to reduce the book keeping! SIGH
 
     @classmethod
     def from_collect(cls, collect):
@@ -280,6 +291,10 @@ class SEscape(_EscBase):
 class String(str, Ast):
     """ Ast for plain strings so that we can
         do things like track start/end """
+
+    @property
+    def value(self):
+        return str(self)
 
     def __repr__(self):
         return dumps(self)
@@ -401,7 +416,19 @@ class XComment(WrapsNext):
     """ eXpression comments, aka datum comments """
 
 
-class FeatureExpr(WrapsNext):
+class WrapsNextN(WrapsNext):
+    """ wrap the next n expressions """
+    # these actually have to be done in the first pass right now
+    # because they eat the next fixed n expressions and grouping
+    # otherwise independent expressions is only as part of the first
+    # phase of the reader, that grouping could be done in the second
+    # phase as well, but that just increases the complexity of both
+    # phases needlessly note that this has to be implemented using
+    # only local transition rules and thus the explicit n is implicit
+    # in the structure of the possible state transition in the parser
+
+
+class FeatureExpr(WrapsNextN):
     """ Common Lisp feature expressions """
 
 
@@ -483,6 +510,13 @@ class LLike(DataType):
     def value(self):
         return self._value
 
+    def caste(self, typef):
+        """ caste should return """
+        value = [ast.caste(typef) if isinstance(ast, Ast)
+                 else ast for ast in self.value]
+        # descend first the caste
+        return typef(self.__class__(value))
+
     def __repr__(self, depth=0, **kwargs):
         # already have a printer for this in protcur
         r = '\n'.join(repr(_) for _ in self.value)
@@ -514,6 +548,24 @@ class Set(LLike):
     o, c = '#{', '}'
 
 
+class PList(LLike):
+    """ In cl it is (getf a :b) and (setf (getf a :b) 'c)."""
+        # In el use getf/setf to act directly as well. Oddly plist-get
+        # and plist-put do not do what you expect? Ah. Because unlike
+        # setf/getf they expect the value to already be present? That
+        # is NOT what the docs say. Ah but the plist cannot be empty
+        # to start with. Very strange. CL doesn't do this.
+
+    o, c = '(plist (', '))'
+
+    def __init__(self, value):
+        if len(value) % 2 != 0:
+            breakpoint()
+            # FIXME need the point location report for this
+            raise ValueError('plist is not a plist!')
+
+        self._value = value
+
 class Dict(LLike):
     """ Sometimes called a hash, sometimes called a map.
     Expectation is that access is O(1). """
@@ -533,6 +585,17 @@ def plist_to_dict(plist):
         raise SyntaxError('plist is not a plist')
     try:
         return dict(zip(plist[::2], plist[1::2]))
+
+        # since python only has strings and this is not intended to be
+        # written back out ... we aren't going to worry about the fact
+        # that {:key value} and {"key" value} are conflated because
+        # meshing with the python ergonimics is more important will
+        # have to add a note about this, hy is in the same situation
+        # where it has to keep them wrapped in the ast, same issue for
+        # atoms on the other side, but that is a different issue
+        # unfortunately to do this right it has to be done in the
+        # caste step
+        #return {a.value:b for a, b in zip(plist[::2], plist[1::2])}
     except TypeError as e:
         breakpoint()
         pass
@@ -619,6 +682,18 @@ toks_scheme = {
 }
 
 # dialect configuration
+
+conf_plist = {
+    # FIXME this will be overly accepting whereas it needs to actively
+    # raise errors when it encounters a form that has multiple
+    # interpretations, in that sense the minimal reader should be
+    # constructed not from the intersection aka common config, but
+    # instead from the union config for all tokens and error if a
+    # state is entered, this means that we _do_ need a variant of the
+    # parser that accepts ~ and , and #; and #_ at the same time
+    **toks_common,
+    't_to_keyw':         ':',  # need this for correct symbol-name behavior
+}
 
 conf_sxpyr = {
     'additional_whitespace': ',',
@@ -884,6 +959,14 @@ class Walk:
     def sh_uqot   (self, ast): return self.uquote(ast)
     def sh_sunq   (self, ast): return self.suquote(ast)
     # TODO iq_sh_uqot
+
+
+class WalkPl(Walk):
+    def listp(self, ast):
+        if all(isinstance(_, Keyword) for _ in ast.collect[0::2]):
+            return PList.from_ast(ast)
+
+        return super().listp(ast)
 
 
 # configure the parser
@@ -1260,6 +1343,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                 if char == t_newline:
                     line += 1
 
+        point = 0
         gen = mgen()
         try:
             for point, char in gen:
