@@ -21,6 +21,7 @@ from .sexp import (
     Comment,
     BComment,
     XComment,
+    HComment,
     Quote,
     IQuote,
     UQuote,
@@ -40,8 +41,10 @@ from .sexp import (
 # dialect configs
 from .sexp import (
     conf_sxpyr,
+    conf_union,
     conf_cl,
     conf_el,
+    conf_xel,
     conf_rkt,
     conf_gui,
     conf_clj,

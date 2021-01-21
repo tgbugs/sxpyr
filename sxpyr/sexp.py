@@ -2,6 +2,12 @@
 # walk
 # caste
 
+# TODO attach source char and line to the syntax objects
+# TODO issues with ambiguity of #word(list 1 2 3)
+# TODO feature expressions aka wraps next n, the impl must be
+# chainable and local because n must be defined, practically this ends
+# up being a wraps next that transitions the state to a wraps next
+
 __version__ = '0.0.1'
 
 from ast import literal_eval
@@ -9,6 +15,22 @@ from json import dumps
 from types import GeneratorType
 
 debug = False
+
+
+def python_to_sxpr(blob):
+    # maybe json to sxpr to be safe? use the json normalization that we have?
+    # blob to sxpr?
+
+    # racket has jsexprs but that is peculiar to racket's syntax
+    # and makes uses of verbatim atoms for keys so that it is possible
+    # to have leading colons in keys etc. we can't do that with plists
+    # and be able to use these in common lisp due to the ::symbol issue
+    if isinstance(blob, dict):
+        return PList([[Keyword(k), dict_to_sxpr(v)] for k, v in blob.items()])
+    elif isinstance(blob, list):
+        return List([dict_to_sxpr(v) for v in blob])
+    else:
+        return blob
 
 
 def make_do_path(do, chunksize=4096):
@@ -416,6 +438,10 @@ class XComment(WrapsNext):
     """ eXpression comments, aka datum comments """
 
 
+class HComment(WrapsNext):
+    """ Header comments, axiomatically at the top level of a file. """
+
+
 class WrapsNextN(WrapsNext):
     """ wrap the next n expressions """
     # these actually have to be done in the first pass right now
@@ -580,7 +606,10 @@ class ByteCode(LLike):
 
 
 def plist_to_dict(plist):
-    # use with Ast.caste
+    # use with Ast.caste XXX NOTE Ast.caste takes care of the
+    # recursion for us this is slightly inefficient because we have to
+    # walk over everything twice, but that is expected given the way
+    # this is broken into three phases for clarity
     if len(plist) % 2 != 0:
         raise SyntaxError('plist is not a plist')
     try:
@@ -626,34 +655,50 @@ unp = object()  # unparsable  # cannot use None
 
 escape_hat = SEscape('^')  # needed to parse elisp escape for control ?\^?
 
+# union tokens
+
+class UnionToken:
+    def __init__(self, *chars):
+        self.chars = chars
+
+    def __eq__(self, other):
+        return other in self.chars
+
+
+union_t_to_unquote = UnionToken(',', '~')
+union_t_to_xcom_in_shrp = UnionToken('_', ';')
+
+
 # tokens
 
 toks_common = {
-    't_newline':         '\n',
-    't_tab':             '\t',
-    't_space':           ' ',
-    't_beg_list_p':      '(',
-    't_end_list_p':      ')',
-   #'t_beg_list_s':      '[',
-   #'t_end_list_s':      ']',
-   #'t_beg_list_c':      '{',
-   #'t_end_list_c':      '}',
-    't_beg_end_str':     '"',
-   #'t_beg_end_aver':    '|',
-    't_to_sharp':        '#',
-   #'t_to_char_in_shrp': '\\',  # TODO
-   #'t_to_cblk_in_shrp': '|',
-   #'t_to_xcom_in_shrp': ';',
-   #'t_to_keyw_in_shrp': ':',
-    't_to_quote':        "'",
-    't_to_quasi':        '`',
-    't_to_unquote':      ',',
-    't_to_splc_in_unq':  '@',
-   #'t_to_keyw':         ':',  # FIXME racket and scheme keywords don't do this
-   #'t_to_esc':          '\\',
-    't_to_esc_in_str':   '\\',
-   #'t_to_char':         '?',
-    't_to_comment':      ';',
+    't_newline':             '\n',
+    't_tab':                 '\t',
+    't_space':               ' ',
+    't_beg_list_p':          '(',
+    't_end_list_p':          ')',
+   #'t_beg_list_s':          '[',
+   #'t_end_list_s':          ']',
+   #'t_beg_list_c':          '{',
+   #'t_end_list_c':          '}',
+    't_beg_end_str':         '"',
+   #'t_beg_end_aver':        '|',
+    't_to_sharp':            '#',
+   #'t_to_char_in_shrp':     '\\',  # TODO
+   #'t_to_cblk_in_shrp':     '|',
+   #'t_to_xcom_in_shrp':     ';',
+   #'t_to_hcom_in_shrp':     '*',
+   #'t_to_keyw_in_shrp':     ':',
+    't_to_quote':            "'",
+    't_to_quasi':            '`',
+    't_to_unquote':          ',',
+   #'t_to_unquote_in_quasi': ',',  # FIXME get this sorted out vs unquote anywhere
+    't_to_splc_in_unq':      '@',
+   #'t_to_keyw':             ':',  # FIXME racket and scheme keywords don't do this
+   #'t_to_esc':              '\\',
+    't_to_esc_in_str':       '\\',
+   #'t_to_char':             '?',
+    't_to_comment':          ';',
 }
 
 toks_b_list_s = {
@@ -699,9 +744,11 @@ conf_sxpyr = {
     'additional_whitespace': ',',
     **toks_common,
     **toks_b_list_sc,
-    't_to_keyw':         ':',
-    't_to_xcom_in_shrp': ';',
-    't_to_unquote':      '~',  # comma as whitespace is too useful
+    't_to_keyw':             ':',
+    't_to_xcom_in_shrp':     ';',  # more consistent that #_
+    't_to_unquote':          '~',  # comma as whitespace is too useful
+   #'t_to_unquote_in_quasi': union_t_to_unquote,  # as nice as it would be, context sensativity is EEK
+    't_to_hcom_in_shrp':     '*',  # taking a note from org-mode
     # no block quotes no escapes and no verbatim atoms
 }
 
@@ -724,6 +771,16 @@ conf_el = {
     't_to_esc':  '\\',
 }
 
+conf_xel = {
+    # FIXME HAHA those cheeky xemacs implementers did it!
+    # they made unquote only take effect inside a quasiquote!
+    # everyone else made it an error, but they just make it work!
+    #'allow_in_symbol': conf_el['t_to_unquote'],  # we may need to restore this
+    **conf_el,
+    't_to_unquote': unp,
+    't_to_unquote_in_quasi': union_t_to_unquote,
+}
+
 conf_hy = {
     'eval_collection_literals': True,  # note this is really eval lists, sets, dicts
     **toks_common,
@@ -734,7 +791,7 @@ conf_hy = {
 }
 
 conf_clj = {
-    'quote_in_symbol': True,
+    'allow_in_symbol': toks_common['t_to_quote'],
     'eval_collection_literals': True,  # this is beyond the reader, cl, el, rkt, scm, are False for this
     # TODO this could also be called implicitly_quote_collections, very annoying behavior ...
     # since it breaks equivalence between #(1 2 (+ 1 2)) and (vector 1 2 (+ 1 2))
@@ -756,13 +813,23 @@ conf_clj = {
 
 conf_rkt = {
     **toks_scheme,
+    **toks_b_list_sc,
 }
 
 conf_gui = {
-    'quote_in_symbol': True,
+    'allow_in_symbol': toks_scheme['t_to_quote'],
     **toks_scheme,
 }
 
+# union of all or as close as we can get
+
+conf_union = {
+    'additional_whitespace': ',',  # will break some xel cases
+    **conf_rkt,
+    't_to_keyw':             ':',
+    't_to_xcom_in_shrp':     union_t_to_xcom_in_shrp,
+    't_to_unquote_in_quasi': union_t_to_unquote,
+}
 
 # walk
 
@@ -971,7 +1038,7 @@ class WalkPl(Walk):
 
 # configure the parser
 
-def configure(quote_in_symbol=False,  # True, False, SyntaxError
+def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict for syntax error?
               additional_whitespace='',
               #escape_always=True,
               #curlies_map=False,
@@ -1002,10 +1069,12 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
               t_to_sharp='#',
               t_to_cblk_in_shrp=unp,
               t_to_xcom_in_shrp=unp,
+              t_to_hcom_in_shrp=unp,
               t_to_keyw_in_shrp=unp,
               t_to_quote="'",
               t_to_quasi='`',
               t_to_unquote=',',
+              t_to_unquote_in_quasi=unp,
               t_to_splc_in_unq='@',
               t_to_keyw=unp,
               t_to_esc=unp,
@@ -1021,7 +1090,8 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
             t_beg_list_s, t_end_list_s,
             t_beg_list_c, t_end_list_c,
             t_beg_end_str, t_beg_end_aver,
-            t_to_sharp, t_to_quote, t_to_quasi, t_to_unquote, 
+            t_to_sharp, t_to_quote, t_to_quasi, t_to_unquote,
+            # t_to_unquote_in_quasi, # FIXME not clear that this should be here XXX it can't
             t_to_keyw, t_to_esc, t_to_char, t_to_comment,]
 
     # even though additional whitespace doesn't get an explicit name
@@ -1038,21 +1108,26 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
     scoe_complex = (t_newline, t_beg_end_str, t_to_esc, t_to_sharp, t_to_cblk_in_shrp)
     # note that pipe does not end atoms and keywords but the state still
     # transitions to v similarly exiting v does not exit atom or keyword
-    ak_ends = (t_beg_list_p, t_end_list_p, t_beg_list_s, t_end_list_s, t_beg_list_c, t_end_list_c, t_to_comment, t_beg_end_str, t_to_quote, t_to_quasi, t_to_unquote, *whitespace)
+    ak_ends = (t_beg_list_p, t_end_list_p, t_beg_list_s, t_end_list_s, t_beg_list_c, t_end_list_c,
+               t_to_quote, t_to_quasi, t_to_unquote, # t_to_unquote_in_quasi, # uiq can't be in due to context
+               t_to_comment, t_beg_end_str,
+               *whitespace)
     '()[]{};"\'`,\n\t '
-    if quote_in_symbol:
-        ak_ends = tuple(s for s in ak_ends if s != t_to_quote)
+    if allow_in_symbol:
+        _ais = tuple(c for c in allow_in_symbol)  # sometimes unp is in ak_ends
+        ak_ends = tuple(s for s in ak_ends if s not in _ais)
 
     m_ends = (*ak_ends, t_to_char, t_beg_end_aver, t_to_sharp)  # FIXME tricky because we need at least one char for m
+    # m is s_char now it was question *m*ark before
 
     # XXX NOTE state could be defined globally but I think
     # keeping it in here will have better performance
     states = [bos, s_atom, s_keyw, s_quote, s_unquote, s_unq_first,
               s_unq_splice, s_quasiq, s_string, s_list_p, s_list_s,
               s_list_c, s_sharp, s_comm, s_esc, s_esc_str,
-              s_comment_x, s_feat_x, s_cblk, s_pi_in_cblk,
+              s_comment_x, s_comment_h, s_feat_x, s_cblk, s_pi_in_cblk,
               s_atom_verbatim, s_comment_b_nest, s_char, s_char_first] = [
-        State(i) for i in range(24)]
+        State(i) for i in range(25)]
     esclikes = s_esc, s_char
     quotelikes = s_quote, s_unquote, s_unq_first, s_unq_splice, s_quasiq, s_comment_x, s_feat_x, s_sharp
     listlikes = s_list_p, s_list_s, s_list_c, s_cblk
@@ -1075,6 +1150,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
         s_esc: 'escp',
         s_esc_str: 'sesc',
         s_comment_x: 'xcom',
+        s_comment_h: 'hcom',
         s_feat_x: 'feat',
         s_cblk: 'cblk',
         s_pi_in_cblk: 'mebl',  # maybe leave block comment
@@ -1087,6 +1163,8 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
     State.state_names.update(state_names)
     state_names = None
     del state_names
+
+    _in_quasi = False  # evil context sensative stack inspecting wormhole to insanity
 
 
     def caste_string(collect):
@@ -1129,6 +1207,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
         elif state == s_unq_splice: val = SUQuote.from_collect(collect)
         elif state == s_sharp: val = caste_sharp(collect)
         elif state == s_comment_x: val = XComment.from_collect(collect)
+        elif state == s_comment_h: val = HComment.from_collect(collect)
         elif state == s_feat_x: val = FeatureExpr.from_collect(collect)  # TODO override
         elif state == s_atom_verbatim: val = caste_atom(collect)  # cl vs rr different behavior '|a \ b| '|a  b|
         elif state in (s_char_first, s_char): val = (
@@ -1157,6 +1236,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
 
     def push_state_from_char(collect_stack, collect, stack, char):
         """ transition forward """
+        nonlocal _in_quasi
         # worth the function call overhead for readability
         def to_state(next_state):
             stack.append(next_state)
@@ -1175,8 +1255,15 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
         elif char == t_beg_list_s: collect = to_state(s_list_s)
         elif char == t_beg_list_c: collect = to_state(s_list_c)
         elif char == t_to_quote: collect = to_state(s_quote)
-        elif char == t_to_quasi: collect = to_state(s_quasiq)
-        elif char == t_to_unquote: collect = to_state(s_unq_first)
+        elif char == t_to_quasi:
+            collect = to_state(s_quasiq)
+            _in_quasi = True
+        elif char == t_to_unquote:
+            collect = to_state(s_unq_first)
+            _in_quasi = False
+        elif char == t_to_unquote_in_quasi:
+            collect = to_state(s_unq_first)
+            _in_quasi = False
         elif char == t_beg_end_aver: collect = to_state_collect(s_atom_verbatim)
         # XXX warning: this branch for pipe only works correctly if
         # collect is None
@@ -1197,15 +1284,40 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
         return collect
 
 
+    def in_quasi(stack):  # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        # XXX FIXME WARNING I'm fairly certain that the call to `in
+        # stack' here takes this parser from a pushdown automata to a
+        # stack automata or at least something more powerful than a
+        # pushdown automata, which moves us from context free to
+        # context sensative which I think moves us into the dangerzone
+        # of recursively enumerable languages which is a place that we
+        # do not want to be XXX in principle it is possible to
+        # implement this by duplicating the listlike states so that
+        # they can be marked as being inside a quasiquote, however
+        # then you get into major weirdness with nested quasiquotes
+        # HOWEVER, given that in principle we could indeed implement this
+        # just by adding states maybe it is ok to open this can of worms
+        # since we know we are only using it reduce the number of states?
+        return s_quasiq in stack and (
+            s_unquote not in stack or
+            # yeah, this is just as crazy as you think it is
+            stack[::-1].index(s_unquote) > stack[::-1].index(s_quasiq))
+
+
     def resolve_pops(collect_stack, collect, stack, char):
         state = stack[-1]
         *cut, = i_resolve_pops(collect_stack, stack, char)
 
         if state == s_char_first:  # FIXME using this to prevent issues with strings sigh
             collect = None
-        elif (char in (t_beg_list_p, t_beg_list_s, t_beg_list_c, t_to_quote, t_to_quasi, t_to_unquote) or
+        elif (char in (t_beg_list_p, t_beg_list_s, t_beg_list_c,
+                       t_to_quote, t_to_quasi, t_to_unquote,
+                       # TODO review to see if we are missing anything here
+                       # given that we missed comment
+                       t_to_comment) or
               state == s_char and char in (t_to_char, t_to_sharp) or  # and char_auto_end ??? chars may end chars ie not cl
-            char == t_beg_end_str and state != s_string):
+              char == t_beg_end_str and state != s_string or
+              char == t_to_unquote_in_quasi and in_quasi(stack)):  # FIXME WARNING in_quasi dangerzone
             collect = push_state_from_char(collect_stack, collect, stack, char)
         elif stack[-1] == s_cblk:
             collect = collect_stack[-1]
@@ -1252,7 +1364,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
 
         elif not collect_stack:
             return cut,
-        elif state_prev == s_comm:
+        elif state_prev in (s_comm, s_comment_h):
             if state in (*quotelikes, *listlikes):
                 collect_stack[-1].append(cut)
                 return tuple()
@@ -1266,6 +1378,9 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                 # comment the thing that comes after them
                 # FIXME this gets very tricky with feature expressions
                 return tuple()
+            if state_prev == s_unquote:
+                nonlocal _in_quasi
+                _in_quasi = in_quasi(stack)  # FIXME SIGH EVIL SIGH
 
             return i_resolve_pops(collect_stack, stack, char)
         elif (char in (t_end_list_p, t_end_list_s, t_end_list_c) and
@@ -1307,6 +1422,10 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
             # reuse the collect from h for x
             stack.append(s_comment_x)
             return True
+        elif char == t_to_hcom_in_shrp:  # NOTE this is like a line comment NOT like an x comment
+            stack.pop()
+            stack.append(s_comment_h)
+            return True
         elif char in '+-':
             stack.pop()
             # do not need collect_stack
@@ -1345,11 +1464,15 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
 
         point = 0
         gen = mgen()
+        in_quasi
+        nonlocal _in_quasi
+        _in_quasi = False
         try:
             for point, char in gen:
                 state = stack[-1]
 
                 if debug:
+                    #print('IQ:', in_quasi(stack))
                     print('cs:', char, stack)
                     pass
 
@@ -1390,7 +1513,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                 elif t_to_char == '?' and state in (s_char_first, s_char) and char == t_to_esc:  # FIXME HACK for elisp
                     stack.append(s_esc_str)  # NOTE elisp uses the same escape sequences for chars and strings
                     continue
-                elif state not in (s_comm, s_cblk, s_comment_b_nest, s_char_first) and char == t_to_esc:  # implicit not in (c, o, m1)
+                elif state not in (s_comm, s_comment_h, s_cblk, s_comment_b_nest, s_char_first) and char == t_to_esc:  # implicit not in (c, o, m1)
                     # FIXME TODO need to split \ in string from the rest
                     if state in (s_string, s_char):
                         stack.append(s_esc_str)
@@ -1444,6 +1567,7 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                     else:
                         continue   # FIXME ... not sure if this is right well it sorta works
 
+                #_in_quasi = in_quasi(stack)  # FIXME hilariously inefficient
                 if state == s_comment_b_nest:
                     stack.pop()
                     if char == t_to_cblk_in_shrp:
@@ -1458,29 +1582,32 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                     stack.append(s_pi_in_cblk)
 
                 # handle all the + cases except
-                elif (char not in toks or
-                      state in (s_atom, s_keyw) and char not in ak_ends and char != t_beg_end_aver or
-                      state in (s_char_first, s_char) and char not in m_ends or
-                      char == t_to_keyw or
-                      state != s_unq_first and char == t_to_splc_in_unq or  # FIXME do we really need u1?
-                      state == s_sharp and char in (t_to_sharp, t_to_keyw_in_shrp) or  # FIXME should probably work like an FeaureExpr?
-                      state == s_atom_verbatim and char != t_beg_end_aver or
-                      state == s_pi_in_cblk and char != t_to_sharp or  # fixme confusing
-                      state in (s_string, s_comm, s_cblk, s_esc, s_esc_str) and char not in scoe_complex or
-                      state in (s_string, s_comm,         s_esc, s_esc_str) and char in (t_to_sharp, t_to_cblk_in_shrp) or
-                      state in (s_string,         s_cblk, s_esc, s_esc_str) and char == t_newline or
-                      state in (          s_comm, s_cblk, s_esc, s_esc_str) and char in (t_beg_end_str, t_to_esc) or
-                      (t_to_char == '?' and
-                       # FIXME EEEEMMMMMAAAAAAAAAAAAACCCCCCSSSSSS
-                     state == s_char and
-                       char in m_ends and
-                       (collect[-1] == escape_hat or
-                        collect[-1] == '-' and
-                        len(collect) > 1 and  # FIXME HACK to avoid index error should be a state
-                        # implicitly checking if there is a KeyChar in collect
-                        # TODO see if we accidentally induce bugs by reading
-                        # things that the elisp reader would not
-                     isinstance(collect [-2], SEscape)))):
+                elif (((not _in_quasi) or char != t_to_unquote_in_quasi
+                       # FIXME XXXXXXXX UGRHHRHR in_quasi COMPLEXITY
+                       ) and
+                      (char not in toks or
+                       state in (s_atom, s_keyw) and char not in ak_ends and char != t_beg_end_aver or
+                       state in (s_char_first, s_char) and char not in m_ends or
+                       char == t_to_keyw or
+                       state != s_unq_first and char == t_to_splc_in_unq or  # FIXME do we really need u1?
+                       state == s_sharp and char in (t_to_sharp, t_to_keyw_in_shrp) or  # FIXME should probably work like an FeaureExpr?
+                       state == s_atom_verbatim and char != t_beg_end_aver or
+                       state == s_pi_in_cblk and char != t_to_sharp or  # fixme confusing
+                       state in (s_string, s_comm, s_comment_h, s_cblk, s_esc, s_esc_str) and char not in scoe_complex or
+                       state in (s_string, s_comm, s_comment_h,         s_esc, s_esc_str) and char in (t_to_sharp, t_to_cblk_in_shrp) or
+                       state in (s_string,                      s_cblk, s_esc, s_esc_str) and char == t_newline or
+                       state in (          s_comm, s_comment_h, s_cblk, s_esc, s_esc_str) and char in (t_beg_end_str, t_to_esc) or
+                       (t_to_char == '?' and
+                        # FIXME EEEEMMMMMAAAAAAAAAAAAACCCCCCSSSSSS
+                       state == s_char and
+                        char in m_ends and
+                        (collect[-1] == escape_hat or
+                         collect[-1] == '-' and
+                         len(collect) > 1 and  # FIXME HACK to avoid index error should be a state
+                         # implicitly checking if there is a KeyChar in collect
+                         # TODO see if we accidentally induce bugs by reading
+                         # things that the elisp reader would not
+                     isinstance(collect [-2], SEscape))))):
                     if collect is None:  # if collect is a list it is
                         # for another state so safe to assign state
                         # here, also required to handle the case where
@@ -1506,21 +1633,22 @@ def configure(quote_in_symbol=False,  # True, False, SyntaxError
                     # FIXME if we are in state m and get here everything breaks
                     # this is where a goto would be really easy
 
-                elif ((state in quotelikes or state == bos)
-                                        and char in (t_end_list_p, t_end_list_s, t_end_list_c) or
+                elif ((state in quotelikes or state == bos) and
+                                            char in (t_end_list_p, t_end_list_s, t_end_list_c) or
                       state == s_list_p and char in (              t_end_list_s, t_end_list_c) or
                       state == s_list_s and char in (t_end_list_p,               t_end_list_c) or
                       state == s_list_c and char in (t_end_list_p, t_end_list_s)):
                     raise SyntaxError('No matching paren!')
 
                 # majority of pops happen here
-                elif (state in (s_atom, s_keyw) and char in ak_ends or
+                elif (state in (s_atom, s_keyw) and (char in ak_ends or
+                      (char == t_to_unquote_in_quasi and _in_quasi)) or  # XXX context sensative warning
                       state in (s_char_first, s_char) and char in m_ends or
                       state == s_list_p     and char == t_end_list_p or
                       state == s_list_s     and char == t_end_list_s or
                       state == s_list_c     and char == t_end_list_c or
                       state == s_string     and char == t_beg_end_str or
-                      state == s_comm       and char == t_newline or
+                      state in (s_comm, s_comment_h) and char == t_newline or
                       state == s_pi_in_cblk and char == t_to_sharp):
                     collect, *thing = resolve_pops(collect_stack, collect, stack, char)
                     yield from thing

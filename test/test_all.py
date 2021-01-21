@@ -3,6 +3,7 @@ from pathlib import Path
 from sxpyr import (conf_sxpyr,
                    conf_cl,
                    conf_el,
+                   conf_xel,
                    conf_rkt,
                    conf_gui,
                    conf_clj,
@@ -18,8 +19,10 @@ git_nofork_path = git_path / 'NOFORK'
 parse_common = configure()
 parse_plist = configure(**conf_plist)
 parse_sxpyr = configure(**conf_sxpyr)
+parse_union = configure(**conf_union)
 parse_cl = configure(**conf_cl)
 parse_el = configure(**conf_el)
+parse_xel = configure(**conf_xel)
 parse_rkt = configure(**conf_rkt)
 parse_gui = configure(**conf_gui)
 parse_clj = configure(**conf_clj)
@@ -164,6 +167,47 @@ def test_read_paths():
 
 def test_parse(debug=False):
     # asdf
+
+    # xelisp symbols and unquote in quasi
+    sprint(parse_xel("`(a ,b,c)"))  # FIXME OH NO is it (unquote b) (unquote c) or what?!
+    # in xemacs this reads with b,c as a single symbol in gemacs, it very much does not
+    # and this is why you don't allow context sensitive things in the input layer
+
+    sprint(parse_xel("`(a,b)"))
+    # XXX so apparenly xemacs actually doesn't unquote b but instead
+    # reads a,b as a symbol, gemacs however does what I would expect,
+    # and I would classify the behavior here as a bug and require the
+    # use of a\,b as in gemacs
+    sprint(parse_xel("(`a,b)"))  # man there is a lot of weirdness in elisp
+
+    # runnin (read "(list 1 , 2 , 3)") in gemacs well the explains a lot
+
+    sprint(parse_xel("`(a ,b)"))
+    sprint(parse_xel("`(a\,b)"))
+    sprint(parse_xel("`(a ,(b `(c ,d)))"))
+    sprint(parse_xel("`(1 ,(a,b `(3 ,c,d)))"))
+
+    sprint(parse_xel("(',)"))
+    sprint(parse_xel("`(,a)"))
+
+    sprint(parse_xel("`,a"))
+    sprint(parse_xel("`,\na"))
+    # sprint(parse_xel("`,")) # FIXME this reads as nothing if using
+    # C-x C-e however the form presented here does cause EOF errors in
+    # nearly every dialect
+
+    sprint(parse_xel('sigh-,-variants'), match=[Atom('sigh-,-variants')])
+    breakpoint()
+
+    # wat
+    hrm = 'oh;no'
+    sprint(parse_xel(hrm), match=[Atom('oh'), Comment('no')])
+    hc_not_in_symbol = 'oh#*no'
+    sprint(parse_sxpyr(hc_not_in_symbol), match=[Atom('oh#*no')])
+    uok = '(;)\n)'
+    sprint(parse_xel(uok))
+    urg = '(x;)\n)'
+    sprint(parse_xel(urg))
 
     sprint(parse_cl('#"!"'))
 
@@ -413,9 +457,9 @@ r""";\
     sprint(parse_rkt("#;\n(a #; b c)"))
     sprint(parse_rkt("(a #; b c)"))
     sprint(parse_rkt("(a #_ b c)"))
-    sprint(parse_rkt("(a #_#; b c)"))
+    sprint(parse_union("(a #_#; b c)"))
     sprint(parse_rkt("(a #; #; b c)"))
-    sprint(parse_rkt("(a #_ #_ b c)"))
+    sprint(parse_union("(a #_ #_ b c)"))
 
     sprint(parse_rkt("' ; shi\nt"))
 
@@ -651,6 +695,15 @@ def test_parse_paths():
              #(git_nofork_path / 'racket/racket/src/cs/schemified/schemify.scm'),  # broken due to |#%name|
              #(git_nofork_path / 'racket/racket/src/schemify/wrap.rkt'),
              #(git_nofork_path / 'sbcl/tests/data/wonky3.lisp'),
+
+             Path('/usr/lib/xemacs/xemacs-packages/lisp/tm/latex-math-symbol.el'),
+             Path('/usr/lib/xemacs/xemacs-packages/lisp/footnote/footnote-kana.el'),
+             Path('/usr/lib/xemacs/xemacs-packages/lisp/haskell-mode/haskell-decl-scan.el'),
+             Path('/usr/lib/xemacs/xemacs-packages/lisp/psgml/psgml-dtd.el'),
+
+             # xemacs elisp
+             *Path('/usr/lib/xemacs').rglob('*.el'),
+
              #)
     #_sigh = (
 
@@ -690,6 +743,7 @@ def test_parse_paths():
              *(git_nofork_path / 'emacs/').rglob('*.el'),  # elisp uses ? for chars
              *(git_nofork_path / 'org-mode/').rglob('*.el'),  # elisp uses ? for chars
              # https://yoo2080.wordpress.com/2013/11/25/question-mark-and-emacs-lisp/
+
 
              )
 
@@ -742,6 +796,13 @@ def test_parse_paths():
         #'ns-win.el',       # ok, I give up, elisp char syntax is too complex
         #'xterm.el',        # ?\C-, infuratingly the ?\C-\' on the line above it _was_ commented
 
+        # xelisp
+        'tex-jp.el',        # coding:iso-2022-jp-unix
+        'mew-lang-jp.el',   # unmarked coding:iso-2022-7bit-unix emacs uses hueristics
+        'riece-mcat-japanese.el',  # coding: iso-2022-jp
+        'footnote-kana.el',        # coding system issues
+        'latex-math-symbol.el',    # unmarked coding:iso-2022-7bit-unix emacs uses hueristics
+
         # clojure
         #'reducers.clj',    # *' issue
         #'transducers.clj', # end with ' issue ... need to look into this ... very rare to see but not banned
@@ -782,10 +843,16 @@ def test_parse_paths():
                         continue
                     elif p.suffix == '.el':
                         print('generic failed:', p, err)
-                        #try:
-                        res = sprint(parse_el(hrm))
-                        print('success el:', p)
-                        #except SyntaxError as err2:
+                        try:
+                            res = sprint(parse_el(hrm))
+                            print('success el:', p)
+                        except Exception as err3:
+                            if 'xemacs' in p.as_posix():
+                                print('fail el:', p)
+                                res = sprint(parse_xel(hrm))
+                                print('success xel:', p)
+                            else:
+                                raise err3 from err
                             #if '?' in hrm:
                                 #print('fail ? issue:', p, err2)
                             #else:
