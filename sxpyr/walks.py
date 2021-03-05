@@ -71,6 +71,15 @@ class WalkRkt(Walk):
             self.usyntax, self.susyntax = self.is_ustx, self.is_suns
             if debug: print('leave ustx')
 
+    def atom(self, ast):
+        # NOTE since we don't have a full implementation we can't
+        # define these dynamically so we hardcode them as errors here
+        # this matches the behavior of calling read in racket
+        if ast.value in ('#',):
+            raise SyntaxError(f'Illegal atom {ast}')
+        else:
+            return super().atom(ast)
+
     def syntax   (self, ast): return ast
     def isyntax  (self, ast): return ast
     def is_ustx  (self, ast): return ast
@@ -114,8 +123,26 @@ class WalkRkt(Walk):
         elif value.startswith('%'):
             # e.g. #%kernel
             return Identifier('#' + value)
+        #elif value in ('',):
+
+            # XXX incidentally the writing below is wrong, and the
+            # way I wrote the reader you don't deal with a bare sharp
+            # as a sharp itself, it is just an atom, we COULD implement
+            # this as a Sharp ast node in caste_sharp, but it simplifies
+            # things for the Sharp ast node to never be empty
+
+            # a bare sharp is not an unbound identifier in racket it
+            # is its own syntax error, that may be implemented as a
+            # macro in the racket reader implementation but since we
+            # don't have a complete runtime backing this we can't
+            # quite pull that off yet, so we create explicit syntax
+            # errors here instead, NOTE double sharp ## is not here
+            # for now because the racket reader supports dispatch
+            # macro chars
+
+            #raise SyntaxError(f'Bad syntax {ast}')
         else:
-            raise NotImplementedError(f'hrm {ast}')
+            raise NotImplementedError(f'No transformer for {ast}')
 
     def sh_keyw (self, ast): return ast
     def _sh_lst (self, ast): return Vector.from_ast(ast)

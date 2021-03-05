@@ -15,6 +15,7 @@ from sxpyr import *
 
 git_path = Path('~/git/').expanduser()
 git_nofork_path = git_path / 'NOFORK'
+test_data = Path(__file__).parent / 'data'
 
 parse_common = configure()
 parse_plist = configure(**conf_plist)
@@ -142,6 +143,19 @@ def test_read_paths():
     pr1 = git_nofork_path / 'racket/racket/collects/compiler/embed.rkt'
     pr2 = git_nofork_path / 'racket/racket/src/cs/schemified/expander.scm'  # big p
 
+    p_rkt1, r_rkt1 = dol(pr_rkt, pr1)
+
+    p_el1, r_el1 = dol(pr_el, pe1)
+    p_el2, r_el2 = dol(pr_el, pe2)
+    p_el3, r_el3 = dol(pr_el, pe3)
+
+    p_rkt1, p_el1, p_el2, p_el3 = None, None, None, None  # debug repr slowness
+
+    # test plist with caste to python
+    ps1 = test_data / 'plist-test.sxpr'
+    # (apply hash-map '(:a b :c d))
+    # but need recursive
+    # (apply hash-map '(:a b :c (:d e :f g)))
     p_1, r_1 = dol(pr_pl, ps1)
     def cf(ast):
         if isinstance(ast, PList):
@@ -153,20 +167,36 @@ def test_read_paths():
 
     c_1 = [_.caste(cf) for _ in r_1]
 
-    p_rkt1, r_rkt1 = dol(pr_rkt, pr1)
-
-    p_el1, r_el1 = dol(pr_el, pe1)
-    p_el2, r_el2 = dol(pr_el, pe2)
-    p_el3, r_el3 = dol(pr_el, pe3)
-
-    p_rkt1, p_el1, p_el2, p_el3 = None, None, None, None  # debug repr slowness
-
-    breakpoint()
-
-
 
 def test_parse(debug=False):
     # asdf
+
+    # racket wat
+    sprint(parse_rkt("""
+before
+#|
+        a
+       /|\
+      b c e
+        |
+        d
+|#
+after
+    """))
+
+    # hy
+    # sprint(parse_hy("""#[[<{} object; :span (, 4 7) :match "bbb">]]"""))  # XXX TODO haven't implemented this
+
+    # xemacs comma in comment in quasiquote
+    sprint(parse_xel('`(a b c " d e, " f g\n)'))
+    sprint(parse_xel('`(a b c ;; d e, f g\n)'))
+
+    # plist sharp weirdness FIXME pretty sure that we don't want this
+    # behavior where sharp eats until the next expression, or rather
+    # it should eat, but internally Sharp ListP should be an error?
+    sprint(parse_plist("""(
+    # ; comment
+    (sharpified thing))"""))
 
     # xelisp symbols and unquote in quasi
     sprint(parse_xel("`(a ,b,c)"))  # FIXME OH NO is it (unquote b) (unquote c) or what?!
@@ -197,7 +227,6 @@ def test_parse(debug=False):
     # nearly every dialect
 
     sprint(parse_xel('sigh-,-variants'), match=[Atom('sigh-,-variants')])
-    breakpoint()
 
     # wat
     hrm = 'oh;no'
@@ -205,9 +234,9 @@ def test_parse(debug=False):
     hc_not_in_symbol = 'oh#*no'
     sprint(parse_sxpyr(hc_not_in_symbol), match=[Atom('oh#*no')])
     uok = '(;)\n)'
-    sprint(parse_xel(uok))
+    sprint(parse_xel(uok), match=[ListP.from_elements(Comment(')'))])
     urg = '(x;)\n)'
-    sprint(parse_xel(urg))
+    sprint(parse_xel(urg), match=[ListP.from_elements(Atom('x'), Comment(')'))])
 
     sprint(parse_cl('#"!"'))
 
@@ -589,7 +618,7 @@ a bit for complexity
     sprint(parse_rkt(test_cfg1))
 
 
-def test_chars():
+def test_chars(debug=False):
     # charachter literals
     def make_test_char(char_marker):
         def inner (s):
@@ -618,7 +647,7 @@ def test_chars():
               ("aa", ListP.from_elements(CharSpec('aa'),)),  # XXX REMINDER that non-existent char errors are NO LONGER reader errors
               (("y", "z"), ListP.from_elements(CharSpec('y'), CharSpec('z'))),
               ("newline", ListP.from_elements(CharSpec('newline'),)),
-              ("SpAcE", ListP.from_elements(CharSpec('space'),)),
+              #("SpAcE", ListP.from_elements(CharSpec('space'),)),  # TODO this only works after walk
               )
     effs = dict(
         tcq = make_test_char('?'),
@@ -637,7 +666,7 @@ def test_chars():
             elif key == 'tcb':
                 parser = parse_clj
             else:
-                parser = parse
+                parser = parse_rkt
 
             #print('string:', string)
             if (#string == 'aa' and key != 'tcqe' or
@@ -657,7 +686,7 @@ def test_chars():
                     pass
             elif key == 'tcqe':
                 if ast is not None:
-                    ast = ast.from_elements(*(ECharSpec([SEscape(_._value)])
+                    ast = ast.from_elements(*(ECharSpec([SEscape(_.value)])
                                               if isinstance(_, CharSpec)
                                               else _ for _ in ast.collect))
 
@@ -682,68 +711,73 @@ def test_chars():
 
 
 def test_parse_paths():
-    paths = ((git_path / 'protc/anno-tags.rkt'),
-             #(git_nofork_path / 'sbcl/src/compiler/generic/early-objdef.lisp'),
-             #(git_nofork_path / 'sbcl/src/code/print.lisp'),
-             #Path('/usr/share/guile/2.2/ice-9/i18n.scm'),
-             #(git_nofork_path / 'emacs/lisp/international/titdic-cnv.el'),
-             #(git_nofork_path / 'emacs/lisp/isearch.el'),
-             #(git_nofork_path / 'emacs/lisp/icomplete.el'),
-             #(git_nofork_path / 'emacs/lisp/mpc.el'),
-             #(git_nofork_path / 'emacs/test/src/syntax-tests.el'),
-             #(git_nofork_path / 'clojure/test/clojure/test_clojure/errors.clj'),
-             #(git_nofork_path / 'racket/racket/src/cs/schemified/schemify.scm'),  # broken due to |#%name|
-             #(git_nofork_path / 'racket/racket/src/schemify/wrap.rkt'),
-             #(git_nofork_path / 'sbcl/tests/data/wonky3.lisp'),
+    paths = (
+        #(git_nofork_path / 'racket/racket/share/pkgs/future-visualizer/future-visualizer/tests/visualizer.rkt'),
+        (git_path / 'protc/anno-tags.rkt'),
+        #(git_nofork_path / 'sbcl/src/compiler/generic/early-objdef.lisp'),
+        #(git_nofork_path / 'sbcl/src/code/print.lisp'),
+        #Path('/usr/share/guile/2.2/ice-9/i18n.scm'),
+        #(git_nofork_path / 'emacs/lisp/international/titdic-cnv.el'),
+        #(git_nofork_path / 'emacs/lisp/isearch.el'),
+        #(git_nofork_path / 'emacs/lisp/icomplete.el'),
+        #(git_nofork_path / 'emacs/lisp/mpc.el'),
+        #(git_nofork_path / 'emacs/test/src/syntax-tests.el'),
+        #(git_nofork_path / 'clojure/test/clojure/test_clojure/errors.clj'),
+        #(git_nofork_path / 'racket/racket/src/cs/schemified/schemify.scm'),  # broken due to |#%name|
+        #(git_nofork_path / 'racket/racket/src/schemify/wrap.rkt'),
+        #(git_nofork_path / 'sbcl/tests/data/wonky3.lisp'),
+        (git_nofork_path / 'hy/tests/native_tests/contrib/hy_repr.hy'),  # broken due to #[strings]
 
-             Path('/usr/lib/xemacs/xemacs-packages/lisp/tm/latex-math-symbol.el'),
-             Path('/usr/lib/xemacs/xemacs-packages/lisp/footnote/footnote-kana.el'),
-             Path('/usr/lib/xemacs/xemacs-packages/lisp/haskell-mode/haskell-decl-scan.el'),
-             Path('/usr/lib/xemacs/xemacs-packages/lisp/psgml/psgml-dtd.el'),
+        Path('/usr/lib/xemacs/xemacs-packages/lisp/edebug/edebug.el'),
+        Path('/usr/lib/xemacs/xemacs-packages/lisp/tm/latex-math-symbol.el'),
+        Path('/usr/lib/xemacs/xemacs-packages/lisp/footnote/footnote-kana.el'),
+        Path('/usr/lib/xemacs/xemacs-packages/lisp/haskell-mode/haskell-decl-scan.el'),
+        Path('/usr/lib/xemacs/xemacs-packages/lisp/psgml/psgml-dtd.el'),
 
-             # xemacs elisp
-             *Path('/usr/lib/xemacs').rglob('*.el'),
 
-             #)
-    #_sigh = (
+        #)
+        #_sigh = (
 
-             # fennel
-             *(git_nofork_path / 'Fennel').rglob('*.fnl'),
+        # fennel
+        *(git_nofork_path / 'Fennel').rglob('*.fnl'),
 
-             # edn
-             Path('export.edn'),
+        # edn
+        test_data / 'export.edn',
 
-             # clj
-             *(git_nofork_path / 'clojure').rglob('*.clj'),
-             *(git_nofork_path / 'spec.alpha').rglob('*.clj'),
-             *(git_nofork_path / 'core.specs.alpha').rglob('*.clj'),
-             *(git_nofork_path / 'tawny-owl').rglob('*.clj'),
+        # clj
+        *(git_nofork_path / 'clojure').rglob('*.clj'),
+        *(git_nofork_path / 'spec.alpha').rglob('*.clj'),
+        *(git_nofork_path / 'core.specs.alpha').rglob('*.clj'),
+        *(git_nofork_path / 'tawny-owl').rglob('*.clj'),
 
-             # common lisp
-             *(git_nofork_path / 'sbcl').rglob('*.lisp'),
+        # hy
+        *Path('/usr/lib/python3.7/site-packages/hy/contrib').rglob('*.hy'),
+        *(git_nofork_path / 'hy').rglob('*.hy'),
 
-             # hy
-             *Path('/usr/lib/python3.7/site-packages/hy/contrib').rglob('*.hy'),
-             *(git_nofork_path / 'hy').rglob('*.hy'),
+        # racket
+        *(git_path / 'protc/protc-lib/protc').rglob('*.rkt'),
+        *(git_nofork_path / 'racket').rglob('*.rkt'),  # wow ... fast
 
-             # chez
-             *(git_nofork_path / 'racket').rglob('*.scm'),
+        # chez
+        *(git_nofork_path / 'racket').rglob('*.scm'),
 
-             # racket
-             *(git_path / 'protc/protc-lib/protc').rglob('*.rkt'),
-             *(git_nofork_path / 'racket').rglob('*.rkt'),  # wow ... fast
+        # guile
+        *Path('/usr/share/guile/2.2/').rglob('*.scm'),
 
-             # guile
-             *Path('/usr/share/guile/2.2/').rglob('*.scm'),
+        # gambit (wow that install location)
+        *Path('/usr/lib64/').rglob('*.scm'),
 
-             # gambit (wow that install location)
-             *Path('/usr/lib64/').rglob('*.scm'),
+        # common lisp
+        *(git_nofork_path / 'sbcl').rglob('*.lisp'),
+        *(git_nofork_path / 'ccl').rglob('*.lisp'),
 
-             # elisp
-             *(git_nofork_path / 'emacs/').rglob('*.el'),  # elisp uses ? for chars
-             *(git_nofork_path / 'org-mode/').rglob('*.el'),  # elisp uses ? for chars
-             # https://yoo2080.wordpress.com/2013/11/25/question-mark-and-emacs-lisp/
+        # elisp
+        *(git_nofork_path / 'emacs/').rglob('*.el'),  # elisp uses ? for chars
+        *(git_nofork_path / 'org-mode/').rglob('*.el'),  # elisp uses ? for chars
+        # https://yoo2080.wordpress.com/2013/11/25/question-mark-and-emacs-lisp/
 
+        # xemacs elisp
+        *Path('/usr/lib/xemacs').rglob('*.el'),
 
              )
 
@@ -759,6 +793,10 @@ def test_parse_paths():
         'new.rkt',         # here string
         #'xform.rkt',       # |;| issue
         #'schemify.scm',    # |#%name| issue
+        'pat-unify.rkt',   # #lang 2d issues
+        'chat-noir-literate.rkt',  # #lang scribble/lp
+        'std-grammar.rkt', # sciribble issues
+        #'scribble/reader.rkt',  # here string
 
         # guile
         # https://www.gnu.org/software/guile/manual/html_node/Symbol-Read-Syntax.html
@@ -809,6 +847,9 @@ def test_parse_paths():
         #'memorise_test.clj',  # #{ issue
         #'owl.clj',         # end with '
 
+        # hy
+        'hy_repr.hy',  # #[string] issues
+
         # fennel
         *(_.name for _ in (git_nofork_path / 'Fennel/test/bad/').rglob('*.fnl'))
     )
@@ -826,6 +867,9 @@ def test_parse_paths():
                 # can't parse @exp
                 continue
 
+            elif hrm.startswith('#lang scribble'):
+                continue
+
             try:
                 res = sprint(parse_rkt(hrm))
                 print('success:', p)
@@ -834,6 +878,11 @@ def test_parse_paths():
                 try:
                     if p.name in should_fail:
                         continue
+                    elif p.suffix == '.rkt':
+                        if '#<<' in hrm:
+                            print('racket fail: here string', p)
+                            # here string
+                            continue
                     elif p.suffix == '.lisp':
                         print('generic failed:', p, err)
                         res = sprint(parse_cl(hrm))
@@ -898,7 +947,18 @@ def test_parse_paths():
     print('total paths:', count + 1)
 
 
-def test_fails():
+def test_fails_read():
+    read_rkt = conf_read(parse_rkt, WalkRkt)
+    bads = ('#',
+            '# ',
+            '##',
+            '#_',
+            "#+ ()",
+            )
+    run_fails(read_rkt, bads)
+
+
+def test_fails_parse():
     bads = ("(defun fail (parse)",
             '"I am an unterminated string',
             'unmatched ) right paren',
@@ -911,27 +971,27 @@ def test_fails():
             "[)",
             "(]",
             "'(1(2)')",  # confusing error message
-            "#+ ()",
             "|a| b|",
             '#| #| |#',
             '(;hrm',  # comment state could mask unterminated list
             '(#;',
             '(#||#',
-            '#',
-            '# ',
-            '##',
             '#;',
-            '#_',
-            '#\\',
+            '#\\',  # note #\ unterminated char in racket
             )
+    run_fails(parse_rkt, bads)
 
+
+def run_fails(read_or_parse, bads):
     should_have_failed = []
     for bad in bads:
         try:  # I WANT MACROS
-            sprint(parse_rkt(bad))
+            sprint(read_or_parse(bad))
             should_have_failed.append(bad)
         except SyntaxError as e:
             print(f'task failed succssfully for {bad!r}')
+        except NotImplementedError as e:
+            print(f'task failed succssfully as not implemented for {bad!r}')
 
     assert not should_have_failed, should_have_failed
 
@@ -945,7 +1005,12 @@ if __name__  == '__main__':
 
     test_read()
     test_read_paths()
-    sys.exit()
+    #sys.exit()
     test_parse(debug=debug)
     test_parse_paths()
-    test_fails()
+    test_fails_read()
+    test_fails_parse()
+    test_chars(debug=debug)
+
+else:
+    printexp = False

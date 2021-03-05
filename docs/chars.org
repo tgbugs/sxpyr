@@ -5,7 +5,7 @@ This is fine.
 Don't let the etymology fool you, the word char has nothing to do with
 strings of characters in the context of lisp readers. It is the verb
 that most accurately describes what trying to implement character
-literals will do to a developers mind.
+literals will do to a developer's mind.
 
 # Burn it all down to the ground and start over. Itsa disaster.
 There is no consistent behavior to be found here. Racket is way ahead,

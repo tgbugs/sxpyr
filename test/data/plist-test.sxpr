@@ -1,0 +1,13 @@
+(
+ :key symbol-1 ; I LOVE COMMENTS
+ :key symbol-2
+ :key-0 "string"
+ :key-1 1
+ :key-2 2.0
+ :key-3 :but-value!
+ :key-4 (
+         :key value
+         :key-0 a-b-c-d
+         )
+ :key-5 "MORE!"
+)

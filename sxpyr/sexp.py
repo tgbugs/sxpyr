@@ -667,7 +667,7 @@ class UnionToken:
 
 union_t_to_unquote = UnionToken(',', '~')
 union_t_to_xcom_in_shrp = UnionToken('_', ';')
-
+union_t_to_feat_in_shrp = UnionToken('+', '-')
 
 # tokens
 
@@ -689,6 +689,8 @@ toks_common = {
    #'t_to_xcom_in_shrp':     ';',
    #'t_to_hcom_in_shrp':     '*',
    #'t_to_keyw_in_shrp':     ':',
+   #'t_to_feat_in_shrp':     union_t_to_feat_in_shrp,
+   #'t_to_strn_in_shrp':     '[',  # sigh hy TODO
     't_to_quote':            "'",
     't_to_quasi':            '`',
     't_to_unquote':          ',',
@@ -758,6 +760,7 @@ conf_cl = {
     't_to_esc':          '\\',
     't_beg_end_aver':    '|',
     't_to_cblk_in_shrp': '|',
+    't_to_feat_in_shrp': union_t_to_feat_in_shrp,
     # NOTE: do not use to_keyw_in_shrp for uninterned
     # it is simple to use (sharp (keyword ...)) than
     # to try to reconfigure this part of the reader
@@ -1071,6 +1074,8 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
               t_to_xcom_in_shrp=unp,
               t_to_hcom_in_shrp=unp,
               t_to_keyw_in_shrp=unp,
+              t_to_feat_in_shrp=unp,
+              t_to_strn_in_shrp=unp,  # TODO only used in hy, adds more states, not sure if want
               t_to_quote="'",
               t_to_quasi='`',
               t_to_unquote=',',
@@ -1131,6 +1136,10 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
     esclikes = s_esc, s_char
     quotelikes = s_quote, s_unquote, s_unq_first, s_unq_splice, s_quasiq, s_comment_x, s_feat_x, s_sharp
     listlikes = s_list_p, s_list_s, s_list_c, s_cblk
+    quasi_ignores = (s_comm, s_comment_x, s_comment_h, s_cblk, s_pi_in_cblk, s_comment_b_nest,
+                     s_string, s_atom_verbatim, s_esc, s_esc_str, s_char
+                     )  # XXX FIXME AAAAAAAAAAAAAAAAA
+    #listlikes + (bos, s_atom, s_kewy)
 
     state_names = {
         bos: 'bos',
@@ -1160,11 +1169,17 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
         s_char_first: 'chrf',
     }
 
+    not_str = {
+        unp: '<unparsable>',
+        eof: '<end-of-file>',
+        None: '<None>',
+    }
+
     State.state_names.update(state_names)
     state_names = None
     del state_names
 
-    _in_quasi = False  # evil context sensative stack inspecting wormhole to insanity
+    _in_quasi = False  # XXX evil context sensative stack inspecting wormhole to insanity
 
 
     def caste_string(collect):
@@ -1189,6 +1204,10 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
         else:
             # defer error until later and
             # note that this is not an EAtom
+
+            # returning an Atom here ensures that Sharp is never empty
+            # and reduces the number of special cases that must be
+            # handled there
             return Atom('#')
 
     def caste(state, collect):  # TODO start and end points
@@ -1223,7 +1242,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
 
     def process_collect(collect_stack, state):
         return caste(state, collect_stack.pop())
-
+        # XXXXXXXXXXX unused below
         thing = collect_stack.pop()
         if collect is not None:
             assert collect == thing, f'\n{collect}\n!=\n{thing}'
@@ -1331,7 +1350,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
 
     def i_resolve_pops(collect_stack, stack, char):
         if debug:
-            print(f'RS: {char} {stack}')
+            print(f'RS: {char if isinstance(char, str) else not_str[char]} {stack}')
             print(f'CO: {collect_stack}')
             pass
         state_prev = stack.pop()  # pop ^
@@ -1350,7 +1369,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
             char = None
 
         if char == eof:  # sigh using a branch for something that provably only happens once
-            if state_prev in (s_string, s_atom_verbatim, *listlikes):
+            if state_prev in (s_string, s_atom_verbatim, s_char_first, *listlikes):
                 # TODO unterminated x starting at position y
 
                 raise SyntaxError(f'Unterminated thing {state_prev}.')
@@ -1426,7 +1445,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
             stack.pop()
             stack.append(s_comment_h)
             return True
-        elif char in '+-':
+        elif char == t_to_feat_in_shrp:  # FIXME
             stack.pop()
             # do not need collect_stack
             # reuse the collect from h for f
@@ -1513,12 +1532,12 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                 elif t_to_char == '?' and state in (s_char_first, s_char) and char == t_to_esc:  # FIXME HACK for elisp
                     stack.append(s_esc_str)  # NOTE elisp uses the same escape sequences for chars and strings
                     continue
-                elif state not in (s_comm, s_comment_h, s_cblk, s_comment_b_nest, s_char_first) and char == t_to_esc:  # implicit not in (c, o, m1)
+                elif state not in (s_comm, s_comment_h, s_cblk, s_comment_b_nest, s_char_first, s_pi_in_cblk) and char == t_to_esc:  # implicit not in (c, o, m1)
                     # FIXME TODO need to split \ in string from the rest
                     if state in (s_string, s_char):
                         stack.append(s_esc_str)
                     else:
-                        stack.append(s_esc)
+                        stack.append(s_esc)  # FIXME why do we do this? is it because of nested blk comments?
                     #breakpoint()  # XXX m debug start point
                     # FIXME interaction between m and e
                     continue
@@ -1582,9 +1601,11 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                     stack.append(s_pi_in_cblk)
 
                 # handle all the + cases except
-                elif (((not _in_quasi) or char != t_to_unquote_in_quasi
+                elif (((not _in_quasi)
                        # FIXME XXXXXXXX UGRHHRHR in_quasi COMPLEXITY
-                       ) and
+                       or char != t_to_unquote_in_quasi
+                       # FIXME this is aweful, arbitrary, and
+                       or _in_quasi and state in quasi_ignores) and
                       (char not in toks or
                        state in (s_atom, s_keyw) and char not in ak_ends and char != t_beg_end_aver or
                        state in (s_char_first, s_char) and char not in m_ends or
