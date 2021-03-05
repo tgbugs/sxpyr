@@ -2,6 +2,7 @@
 
 Parse s-expressions, edn, and a variety of lisp dialects.
 
+* Introduction
 Currently supports something approximating the union of Common Lisp,
 Scheme, Racket, Clojure, Hy, Fennel, and Emacs Lisp.
 
@@ -28,3 +29,21 @@ Racket's ~#lang at-exp~. In the future it might be possible to pass
 the generator through to the functions that handle dispatch macros and
 make it possible to register new reader macros, but that is well out
 of scope at the moment.
+* Testing
+In order to run the tests you will need the following repos.
+- sbcl
+- ccl
+- emacs
+- org-mode
+- clojure
+- spec.alpha
+- code.specs.alpha
+- tawny-owl
+- hy
+- Fennel
+
+For now you will also need the following installed on your system.
+- xemacs
+- app-xemacs/xemacs-packages-all
+- guile
+- gambit
