@@ -1,5 +1,5 @@
-from sxpyr.sexp import *
-from sxpyr.sexp import _m
+from sxpyr.sxpyr import *
+from sxpyr.sxpyr import _m
 from sxpyr import char
 from unicodedata import name as uniname, lookup as unilookup
 

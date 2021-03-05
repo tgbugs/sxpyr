@@ -3,7 +3,7 @@ from setuptools import setup
 
 
 def find_version(filename):
-    _version_re = re.compile(r"__version__ = '(.*)'")
+    _version_re = re.compile(r"__version__ = ['\"](.*)['\"]")
     for line in open(filename):
         version_match = _version_re.match(line)
         if version_match:
@@ -29,16 +29,16 @@ setup(name='sxpyr',
       classifiers=[
           'Development Status :: 4 - Beta',
           'License :: OSI Approved :: MIT License',
-          'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
           'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
       ],
       keywords=('lisp reader edn clojure racket scheme '
                 'elisp emacs sexp s-expression parser parsing'),
       packages=[
           'sxpyr',
       ],
-      python_requires='>=3.6',
+      python_requires='>=3.7',
       tests_require=tests_require,
       extras_require={'test': tests_require,
                      },

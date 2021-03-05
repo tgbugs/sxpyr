@@ -10,7 +10,7 @@ from sxpyr import (conf_sxpyr,
                    conf_hy)
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
-from sxpyr.sexp import conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast
+from sxpyr.sxpyr import conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast
 from sxpyr import *
 
 git_path = Path('~/git/').expanduser()
@@ -110,7 +110,7 @@ def test_read():
 
 
 def test_read_paths():
-    from sxpyr.sexp import make_do_path
+    from sxpyr.sxpyr import make_do_path
     def make_pr(parse, walk_cls):
         read = conf_read(parse, walk_cls)
         parse_path = make_do_path(parse)
@@ -1000,8 +1000,8 @@ if __name__  == '__main__':
     debug = '-d' in sys.argv
     printexp = debug or '-e' in sys.argv
     if debug:
-        import sxpyr.sexp
-        sxpyr.sexp.debug = True
+        import sxpyr.sxpyr
+        sxpyr.sxpyr.debug = True
 
     test_read()
     test_read_paths()

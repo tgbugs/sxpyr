@@ -1,10 +1,10 @@
-from .sexp import (
+from .sxpyr import (
     configure,
     make_do_path,
     __version__)
 
 # ast nodes
-from .sexp import (
+from .sxpyr import (
     ListP,
     ListS,
     ListC,
@@ -30,7 +30,7 @@ from .sexp import (
     FeatureExpr,)
 
 # data types
-from .sexp import (
+from .sxpyr import (
     Cons,
     List,
     Array,
@@ -39,7 +39,7 @@ from .sexp import (
     Dict,)
 
 # dialect configs
-from .sexp import (
+from .sxpyr import (
     conf_sxpyr,
     conf_union,
     conf_cl,

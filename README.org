@@ -6,11 +6,6 @@ Parse s-expressions, edn, and a variety of lisp dialects.
 Currently supports something approximating the union of Common Lisp,
 Scheme, Racket, Clojure, Hy, Fennel, and Emacs Lisp.
 
-This library is designed to be vendored for projects that want to
-avoid dependencies. It bears an MIT license and sxpyr.py can be
-copied directly into other projects so that they can parse a wide
-variety of formats, including Clojure's EDN.
-
 Since sxpyr is designed to support a variety of different dialects, a
 second pass is almost always needed in order to match the output of
 native readers. This second pass is a good place to raise additional
@@ -29,6 +24,12 @@ Racket's ~#lang at-exp~. In the future it might be possible to pass
 the generator through to the functions that handle dispatch macros and
 make it possible to register new reader macros, but that is well out
 of scope at the moment.
+
+Originally this library was intended to be vendored, however since
+then it is significantly increased in complexity. A stripped down
+version that is suitable for parsing a minimal sane dialect that can
+be used as a configuration language may be added in the future.
+
 * Testing
 In order to run the tests you will need the following repos.
 - sbcl
