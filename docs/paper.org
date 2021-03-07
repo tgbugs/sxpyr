@@ -1,0 +1,47 @@
+#+title: A survey of lisp reader behavior
+#+author: Tom Gillespie
+#+date: 2021-03-06
+* Abstract
+There is a just-so story that lisp syntax is simple, but is this
+really the case?  Here I report on an investigation into the surface
+syntax of a number of active dialects of lisp and the impact of
+surface syntax design choices on implementation complexity.
+
+This investigation was performed during the implementation of a
+generic lisp reader for Python (https://github.com/tgbugs/sxpyr).
+The dialects in question are Common Lisp, Emacs Lisp (GNU, XEmacs),
+Scheme (Chez, Guile, Gambit), Racket, Clojure, Hy, and Fennel.
+
+The design of the sxpyr reader is not intended to be performant but
+instead provides a configurable parser that can be adapted to read a
+wide variety of lisp dialects into a common abstract syntax.  This
+allows for a comparison of the implementation complexity of parsing
+particular syntactic features as well as other features of lisp
+readers. I discuss the implementation of the sxpyr reader and how
+separating reading into three phases simplifies comparison between
+dialects.
+
+One of the byproducts of implementing sxpyr was a comparison of the
+variability in behavior of lisp dialects when reading potentially
+ambiguous forms. The end result is the identification of a universal
+portable subset of surface syntax that functions across dialects.
+
+I present a comprehensive review of the syntactic features supported
+by each dialect and identify behaviors that are variable between and
+sometimes even within dialects. For example, how are two consecutive
+char literals read if there is no space between them? In addition I
+present an analysis of the implementation complexity that such
+features induce, as well as the impact on portability due to slight
+differences in how certain edge cases are handled between dialects.
+
+While the exact characters used in a particular surface syntax vary,
+all the dialects investigated thus far share a common abstract
+syntax. The major syntactic types are list-like, quote-like
+(wraps-next), feature-expression-like (wraps-and-eats), string-like,
+nested-string-like (block comments), comment-like (e.g. =#lang
+racket=), and atom-like.
+
+Despite these commonalities, there are major pain points when
+implementing readers. To this end, I discuss in detail one of the most
+complex and variable parts of the surface syntax across all lisp
+dialects -- character literals.
