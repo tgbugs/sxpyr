@@ -56,7 +56,7 @@ these cases than there are for parsing basic sexps.
 
 
 # ((((
-#+name: char-reader-errors
+#+name: tbl-char-reader-errors
 #+caption: rr racket, gu guile, ga gambit, elu emacs lisp unescaped, ele emacs lisp escaped
 #+caption: Char syntax markers =?= =?\= =\= =#\= (=#\= is used in the table below)
 | pattern     | rr      | gu      | ga      | elu     | ele     | sbcl    | clj     |
