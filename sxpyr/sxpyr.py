@@ -62,7 +62,7 @@ def conf_read(parser, walk_cls):
             if isinstance(ast, _)]:
             revalue = walk_help(ast.value, walk)
             ast.value = revalue
-        elif isinstance(ast, _LBase):
+        elif isinstance(ast, ListAbstract):
             # FIXME this kind of defeats the point of having
             # that nice pda in the first place when we recursively
             # descend here
@@ -169,7 +169,7 @@ class Ast:
         return cls(ast.value)
 
 
-class _LBase(Ast):
+class ListAbstract(Ast):
 
     __eq__ = _m.eq_collect
 
@@ -184,15 +184,15 @@ class _LBase(Ast):
         return f'<{self._o} {repr(self.collect)[1:-1]} {self._c}>'
 
 
-class ListP(_LBase):
+class ListP(ListAbstract):
     _o, _c = '()'
 
 
-class ListS(_LBase):
+class ListS(ListAbstract):
     _o, _c = '[]'
 
 
-class ListC(_LBase):
+class ListC(ListAbstract):
     _o, _c = '{}'
 
 
@@ -278,7 +278,7 @@ class EAtom(Atom):
         return dialect_ak_escape(self.collect)
 
 
-class _EscBase(Ast):
+class EscAbstract(Ast):
 
     __eq__ = _m.eq__value
 
@@ -289,7 +289,7 @@ class _EscBase(Ast):
         return hash((self.__class__, self._value))
 
 
-class Escape(_EscBase):
+class Escape(EscAbstract):
     """ Symbol escapes """
 
     @property
@@ -303,7 +303,7 @@ class Escape(_EscBase):
         return self._value
 
 
-class SEscape(_EscBase):
+class SEscape(EscAbstract):
     """ String and char escape. """
 
     def value(self, dialect_escapes):
@@ -432,6 +432,7 @@ class SUQuote(WrapsNext):
 
 class Sharp(WrapsNext):
     """ Sharp! Hash! Octothorp! Who knows. """
+    # FIXME rename to Dispatch
 
 
 class XComment(WrapsNext):
@@ -458,35 +459,16 @@ class FeatureExpr(WrapsNextN):
     """ Common Lisp feature expressions """
 
 
-# second phase abstract types (incomplete)
-# not clear we need this, I think it is probably
-# one layer of indirection too many
-
-
-class Identifier(Ast):
-    __eq__ = _m.eq_value
-    def __init__(self, value): self.value = value
-
-
-class Boolean(Ast):
-    __eq__ = _m.eq_value
-    def __init__(self, value): self.value = value
-
-
-class Char(Ast):
-    """ the char spec fully processed down
-    to a single charachter or value """
-    __eq__ = _m.eq_value
-    def __init__(self, value): self.value = value
-
-
-class LangLine(Ast):
-    """ the racket lang line #lang """
-    __eq__ = _m.eq_value
-    def __init__(self, value): self.value = value
+# one and a halfth phase? or 2nd phase? these are things that could be
+# parsed directly from the stream, but are not because they are
+# lurking behding the sharp and we don't interpret the sharp until
+# phase two in most dialects, this doesn't have to be the case if
+# there is the single token transition, more correctly, these would be
+# named DispatchQuote, DispatchQuasiQuote, Dispatch
 
 
 class Syntax(WrapsNext):
+    """ In principle one could have a single token that transitioned to syntax. """
     __eq__ = _m.eq_value
     def __init__(self, value): self.value = value
 
@@ -506,11 +488,56 @@ class SUSyntax(WrapsNext):
     def __init__(self, value): self.value = value
 
 
-class DataType(Ast):  # FIXME naming
+# second phase abstract types (incomplete)
+# not clear we need this, I think it is probably
+# one layer of indirection too many
+
+
+class PhaseTwoThing:
+    """ Not really an ast anymore. """
+
+
+class AtomsChildren(PhaseTwoThing):
+    """ Any number of things here """
+
+
+class Identifier(AtomsChildren):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class Boolean(AtomsChildren):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class Number(AtomsChildren):
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+class LangLine(PhaseTwoThing):
+    """ the racket lang line #lang """
+    # XXX This is comment-like or WrapsUnti
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
+
+
+# datatypes, mostly concrete
+
+
+class DataType:  # FIXME naming
     """ objects that have specific semantics in certain dialects
     this provides a layer of indirection so that the choice of
     the python structure used internally can be tailored to the
     exact use case without blindly following upstream """
+
+
+class Char(DataType):
+    """ the char spec fully processed down
+    to a single charachter or value """
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
 
 
 class Cons(DataType):
@@ -545,6 +572,7 @@ class LLike(DataType):
 
     def __repr__(self, depth=0, **kwargs):
         # already have a printer for this in protcur
+        # FIXME recursion errors for deeply nested structures
         r = '\n'.join(repr(_) for _ in self.value)
         return self.o + r + self.c
 
@@ -591,6 +619,7 @@ class PList(LLike):
             raise ValueError('plist is not a plist!')
 
         self._value = value
+
 
 class Dict(LLike):
     """ Sometimes called a hash, sometimes called a map.
@@ -840,7 +869,7 @@ conf_union = {
 class Walk:
 
     _recurse_funs = (
-        (_LBase, '_lbase'),
+        (ListAbstract, '_labst'),
         (Sharp, '_sharp'),  # process this up here
         (IQuote, '_iquote'),
         (WrapsNext, '_wraps_next'),  # lol I actually had it implemented already
@@ -924,7 +953,7 @@ class Walk:
         return [c for c in (Comment, XComment, BComment)
                 if isinstance(ast, c)]
 
-    def _lbase(self, ast):
+    def _labst(self, ast):
         recollect = [self(_) for _ in ast.collect
                      if not self._skip(_)]
         return ast.__class__(recollect)
@@ -1046,11 +1075,11 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
               #escape_always=True,
               #curlies_map=False,
               #char_esc_expand=tuple(),  # expand rules must be provided at runtime FIXME dict or function?
-              char_auto_escape=True,  # FIXME the variety of behaviors has 2 axes I think, not clear what the default should be yet
+              #char_auto_escape=True,  # FIXME the variety of behaviors has 2 axes I think, not clear what the default should be yet
               char_auto_end=True,  # FIXME same issue  XXX not sure we need this, somehow I think racket special cased these?
               #char_name_symbol=False,  # this is what cl does
               #immutable_cons=False,  # FIXME this should be deferred
-              sharp_atom_end_only_some=False,  # FIXME I think this is how to deal w/ racket?
+              #sharp_atom_end_only_some=False,  # FIXME I think this is how to deal w/ racket?
 
               ## tokens (common are set)
 

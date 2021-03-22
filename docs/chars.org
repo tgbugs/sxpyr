@@ -32,28 +32,56 @@ more states that would have to be added to the parser to handle all of
 these cases than there are for parsing basic sexps.
 
 * Manual Results
-#+macro: e
-#((((((((((((
+#+macro: e =X=
+# ((((((((((((
+| pat ?   | pat ?\   | pat #\ \ | rr      | gu      | ga      | elu     | ele     | sbcl    | clj     |
+|---------+----------+----------+---------+---------+---------+---------+---------+---------+---------|
+| =?{ws}= | =?\{ws}= | =#\{ws}= | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =?;=    | =?\;=    | =#\;=    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =?)=    | =?\)=    | =#\)=    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =?a=    | =?\a=    | =#\a=    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =?  a=  | =?\  a=  | =#\  a=  | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =?  'a= | =?\  'a= | =#\  'a= | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =?) a=  | =?\) a=  | =#\) a=  | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =? 'a=  | =?\ 'a=  | =#\ 'a=  | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
+| =?)'a=  | =?\)'a=  | =#\)'a=  | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
+| =? a=   | =?\ a=   | =#\ a=   | ok      | ok      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} |
+| =?;a=   | =?\;a=   | =#\;a=   | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =?)a=   | =?\)a=   | =#\)a=   | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =?'a=   | =?\'a=   | =#\'a=   | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =?aa=   | =?\'a=   | =#\aa=   | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =?a?b=  | =?\a?\b= | =#\a#\b= | ok      | {{{e}}} | {{{e}}} | ok      | ok      | {{{e}}} | ok      |
+| =?new=  | =?\new=  | =#\new=  | ok      | ok      | ok      | {{{e}}} | {{{e}}} | ok      | ok      |
+|---------+----------+----------+---------+---------+---------+---------+---------+---------+---------|
+
+
+# ((((
 #+name: char-reader-errors
-| pat ?    | pat ?\    | pat #\ \  | rr      | gu      | ga      | el uesc | el esc  | sbcl    | clj     |
-|----------+-----------+-----------+---------+---------+---------+---------+---------+---------+---------|
-| ?{ws}    | ?\{ws}    | #\{ws}    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ?;       | ?\;       | #\;       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ?)       | ?\)       | #\)       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ?a       | ?\a       | #\a       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ?  a     | ?\  a     | #\  a     | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ?  'a    | ?\  'a    | #\  'a    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ?) a     | ?\) a     | #\) a     | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
-| ? 'a     | ?\ 'a     | #\ 'a     | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
-| ?)'a     | ?\)'a     | #\)'a     | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
-| ? a      | ?\ a      | #\ a      | ok      | ok      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} |
-| ?;a      | ?\;a      | #\;a      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
-| ?)a      | ?\)a      | #\)a      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
-| ?'a      | ?\'a      | #\'a      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
-| ?aa      | ?\'a      | #\aa      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
-| ?a?b     | ?\a?\b    | #\a#\b    | ok      | {{{e}}} | {{{e}}} | ok      | ok      | {{{e}}} | ok      |
-| ?newline | ?\newline | #\newline | ok      | ok      | ok      | {{{e}}} | {{{e}}} | ok      | ok      |
-|----------+-----------+-----------+---------+---------+---------+---------+---------+---------+---------|
+#+caption: rr racket, gu guile, ga gambit, elu emacs lisp unescaped, ele emacs lisp escaped
+#+caption: Char syntax markers =?= =?\= =\= =#\= (=#\= is used in the table below)
+| pattern     | rr      | gu      | ga      | elu     | ele     | sbcl    | clj     |
+|-------------+---------+---------+---------+---------+---------+---------+---------|
+| =#\{ws}=    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\;=       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\)=       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\a=       | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\  a=     | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\  'a=    | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\) a=     | ok      | ok      | ok      | ok      | ok      | ok      | ok      |
+| =#\ 'a=     | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
+| =#\)'a=     | ok      | ok      | ok      | ok      | ok      | ok      | {{{e}}} |
+| =#\ a=      | ok      | ok      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} |
+| =#\;a=      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =#\)a=      | ok      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =#\'a=      | ok      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =#\aa=      | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} | {{{e}}} |
+| =#\a#\b=    | ok      | {{{e}}} | {{{e}}} | ok      | ok      | {{{e}}} | ok      |
+| =#\newline= | ok      | ok      | ok      | {{{e}}} | {{{e}}} | ok      | ok      |
+|-------------+---------+---------+---------+---------+---------+---------+---------|
+
+
+Does string escape behavior match char escape behavior? Sometimes!
+
 
 # FIXME the whitespace table is inaccurate based on using (eval (read "?\ "))
 Note that in elisp ~?\n~ is newline and ~?\n != ?n~ unlike for other

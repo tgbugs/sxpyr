@@ -59,6 +59,26 @@ def test_read():
     read_rkt = conf_read(parse_rkt, WalkRkt)
     read_el = conf_read(parse_el, WalkEl)
 
+    # the dangers of recursion
+    recursion_limit = sys.getrecursionlimit()
+    rec_under = int(recursion_limit // 4.5)
+    rec_over = int(recursion_limit // 4)
+    print('under over on stack', rec_under, rec_over)
+    # close enough to the limit that certain other things like calling
+    # repr will hit the limit
+    big = next(read_rkt(''.join([p * rec_under for p in ("(", ")")])))
+    try:
+        repr(big)
+        assert False, "should have blown the stack"
+    except RecursionError as e:
+        pass
+
+    try:
+        oops = next(read_rkt(''.join([p * rec_over for p in ("(", ")")])))
+        assert False, "should have blown the stack"
+    except RecursionError as e:
+        pass
+
     # elisp chars
     a = next(read_el(r'?\^\M-\N{colon}'))
     b = next(read_el(r'?\^\M-:'))
