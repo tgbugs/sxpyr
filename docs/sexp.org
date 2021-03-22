@@ -30,26 +30,29 @@ In the second phase the major contributors to complexity due to diversity are.
 * Reading behavior
 Bold entries are *wat*.
 
-#+name: reading-behavior
-| dialect     | implementation | XComment  | ~(and 'a'b'c)~ | ~(and 'a`b)~ | ~\~  | char       | verbatim symbol        |   |
-|-------------+----------------+-----------+----------------+--------------+------+------------+------------------------+---|
-| Common Lisp | sbcl           | ~#+()~    | ~C~            | ~B~          | esc  | ~#\~       | pipe                   |   |
-| Scheme RnRS | chez           | ~#;~      | ~c~            | ~b~          | esc  | ~#\~       | pipe                   |   |
-|             | gambit         | ~#;~      | ~c~            | ~b~          | esc  | ~#\~       | pipe                   |   |
-|             | guile          | ~#;~      | *~a'b'c~*      | ~a`b~        | esc  | ~#\~       | ~#{}#~ pipe [fn::r7rs] |   |
-| Racket      | cs             | ~#;~      | ~c~            | ~b~          | esc  | ~#\~       | pipe                   |   |
-| Emacs Lisp  | Emacs          | {{{nil}}} | ~c~            | ~b~          | esc  | ~?~        | {{{nil}}}              |   |
-| Clojure     | Java           | ~#_~      | ~a'b'c~        | ~user/b~     | char | ~\~ [fn:2] | {{{nil}}}              |   |
-|             | ECMAScript     | ~#_~      | ~a'b'c~        | ~user/b~     | char | ~\~        | {{{nil}}}              |   |
-| Hy          | Python         | ~#_~      | ~c~            | *~a`b~*      | ~\~  | {{{nil}}}  | {{{nil}}}              |   |
-| Fennel      | Lua            |           |                |              |      |            |                        |   |
-|             |                |           |                |              |      |            |                        |   |
-|-------------+----------------+-----------+----------------+--------------+------+------------+------------------------+---|
-|             | 3m/bc          | ~#;~      | ~c~            | ~b~          | esc  | ~#\~       | pipe                   |   |
-|             | cgc            | ~#;~      | ~c~            | ~b~          | esc  | ~#\~       | pipe                   |   |
-| sxpyr       | Python         | ~#_~ ~#;~ | syntax error   | {{{nil}}}    | ???  | ~#\~       | syntax error?          |   |
+#+macro: pipe ~|~
+#+macro: pipetest1 ~'|a|b~
 
-[fn:2] I kind of get the feeling that RH did this because for the same
+#+name: reading-behavior
+| dialect     | implementation | XComment  | ~(and 'a'b'c)~ | ~(and 'a`b)~ | ~\~  | char             | verbatim symbol              | {{{pipetest1}}} |
+|-------------+----------------+-----------+----------------+--------------+------+------------------+------------------------------+-----------------|
+| Common Lisp | sbcl           | ~#+()~    | ~C~            | ~B~          | esc  | ~#\~             | {{{pipe}}}                   |                 |
+| Scheme RnRS | chez           | ~#;~      | ~c~            | ~b~          | esc  | ~#\~             | {{{pipe}}}                   |                 |
+|             | gambit         | ~#;~      | ~c~            | ~b~          | esc  | ~#\~             | {{{pipe}}}                   |                 |
+|             | guile          | ~#;~      | *~a'b'c~*      | ~a`b~        | esc  | ~#\~             | ~#{}#~ {{{pipe}}} [fn::r7rs] |                 |
+| Racket      | cs             | ~#;~      | ~c~            | ~b~          | esc  | ~#\~             | {{{pipe}}}                   |                 |
+| Emacs Lisp  | Emacs          | {{{nil}}} | ~c~            | ~b~          | esc  | ~?~              | {{{nil}}}                    |                 |
+| Clojure     | Java           | ~#_~      | ~a'b'c~        | ~user/b~     | char | ~\~ [fn:clj-esc] | {{{nil}}}                    |                 |
+|             | ECMAScript     | ~#_~      | ~a'b'c~        | ~user/b~     | char | ~\~              | {{{nil}}}                    |                 |
+| Hy          | Python         | ~#_~      | ~c~            | *~a`b~*      | ~\~  | {{{nil}}}        | {{{nil}}}                    |                 |
+| Fennel      | Lua            |           |                |              |      |                  |                              |                 |
+|             |                |           |                |              |      |                  |                              |                 |
+|-------------+----------------+-----------+----------------+--------------+------+------------------+------------------------------+-----------------|
+|             | 3m/bc          | ~#;~      | ~c~            | ~b~          | esc  | ~#\~             | {{{pipe}}}                   |                 |
+|             | cgc            | ~#;~      | ~c~            | ~b~          | esc  | ~#\~             | {{{pipe}}}                   |                 |
+| sxpyr       | Python         | ~#_~ ~#;~ | syntax error   | {{{nil}}}    | ???  | ~#\~             | syntax error?                |                 |
+
+[fn:clj-esc] I kind of get the feeling that RH did this because for the same
 reason as the other general shortenings for names compared to other
 lisps. The fact that ~#\~ is more consistent and homogenous and also
 easier to implement as a result seems to have been on the wrong side
@@ -108,6 +111,8 @@ ambiguous.
 Haven't been able to find anything about this yet.
 https://www.gnu.org/software/guile/manual/html_node/Symbols.html
 https://www.gnu.org/software/guile/manual/html_node/Symbol-Read-Syntax.html
+https://www.gnu.org/software/guile/manual/html_node/R6RS-Incompatibilities.html
+https://www.gnu.org/software/guile/manual/html_node/R7RS-Incompatibilities.html
 
 Crickets on this. I mean, I get that you just tell the user that they
 are at fault for not putting spaces between their symbols, but REALLY?

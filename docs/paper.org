@@ -6,10 +6,12 @@
 
 # [[file:paper.pdf]]
 # [[file:paper.tex]]
+# [[file:paper.html]]
 
 # #+options: toc:nil num:nil
-#+options: H:3 num:nil toc:nil \n:nil @:t ::t |:t -:t f:t *:t <:t _:nil ^:nil
-#+options: TeX:t LaTeX:t skip:nil d:nil todo:t pri:nil tags:not-in-toc
+#+options: H:3 num:nil toc:nil \n:nil ::t |:t -:t f:t *:t <:t ^:nil
+#+options: d:nil todo:t pri:nil tags:not-in-toc
+# TeX:t LaTeX:t skip:nil @:t
 
 # have to call make title late in a document like this
 # #+options: title:nil author:nil email:nil
@@ -130,90 +132,31 @@ section 1.2.7 of cite:cltl2). However, a wary reader might notice the
 hints of complexity lurking behind the sharp ~#~ character that are
 borne out in section 22.1.4 of cite:cltl2.
 
-#+begin_comment
-is a veiled threat lurking behind the designation of ~#~ being an indicator
-of
+Beyond their surface syntax Lisp dialects vary at nearly every level
+of the language. To name only a few features that vary consider,
+lexical scoping, separation of function and variable namespaces
+cite:gabriel88_lisp1vslisp2, the exact macro syntax for =let=, first
+class continuations, reader macros, and many more.
 
-Despite this, there is an abundance of complexity
-lurking behindg
+Despite this variability, as we will see, most lisps share a common
+abstract syntax, and in cases where they might not, it is possible to
+allow a bit of permissiveness on the part of a parser, at the cost of
+a bit of ambiguity in pursuit of a unified syntax.
 
-Other candidates for similar levels of simplicity are
+Given that there are generations worth of design decisions at every
+level, trying to understand all of their impact on usability and
+usefulness of the language is a monumental task.
 
-
-Compliant C parsers require upwards of 10k
-states to correctly parse C grammar.
-#+end_comment
-
-There are an arbitrary number of concrete syntaxes that are supported
-by lisp, so it is not surprising that variants such as Clojure's use
-of tilde ~~~ for unquote come as no surprise [fn::Fennel switched to
-use the more traditional comma as unquote in version 3.0]. At issue
-here are the subtle differences in the exact rules which lead to
-incompatiblity or ambiguity between parses of the same source by
-different dialects. Some of these are obvious, others are superb
-pitfalls that any trapper would be proud to have constructed.
-
-# At the edge of a very shallow pool. It is possible to drown in 2 inches of water.
-
-# FIXME pretty sure this is just a distraction
-Beyond surface syntax Lisp dialects vary at nearly every level of the
-language, from the peculiarities of the exact macro syntax for =let=,
-to whether they have first class continuations, to whether they have
-reader macros.
-
-These differences are often not immediately apparent to users due to
-overlaps in the concrete syntax of different dialects, as well to the
-fact that the surface syntax @@comment:, perhaps moreso in Lisp than
-in any other language besides assembly,@@ gives little to no
-indication about the underlying differences in the semantics of the
-language or the features of the runtime.
-
-Thus for example, the differences between =dynamic-wind= and
-=unwind-protect= cite:pitman_unwind_protect_vs_cc are rendered
-fundamentally esoteric with respect to surface syntax. This
-exemplifies one of the many trade-offs that languages have to make in
-balancing implementation complexity and usability.
-
-#+begin_comment
-become apparent to new visitors exploring Lisps at
-different rates. One set of issues that is difficult for beginners to
-discover, is the corner cases in the surface syntax of a
-language. Lisp syntax is simple enough that there are few ambiguous or
-unreconciable differences between dialects, however, there are a few.
-#+end_comment
-
-#+begin_comment
-Without dwelling on the long standing issues with the alieness of
-s-expressions to many novices, the nuance. The simplicity of the
-syntax
-
-Veteran lispers almost certainly know much of the content discussed
-here implicitly.
-
-The nuances are a source of much potential pain.
-#+end_comment
+So instead of going deep let's start at the surface. How complex can
+it be? I've already asserted that most lisps share a common abstract
+syntax, so what issues does the concrete syntax have? Furthermore,
+what can we learn from the tradeoffs that have been made over the last
+40+ years?
 
 This paper focuses on the behavior of extant lisp readers, all of
 which read a top-level expression as a single atomic event with
 respect to the state of the reader itself. This does not necessarily
 have to be the case cite:pitman95_ambit_evaluat.
-
-#+begin_comment
-Note that this atomicity is only about the divisibility of a top level
-expression into sub-expressions (e.g. a list of lists) with respect to
-changes in the behavior of the reader. The act of reading may induce
-changes into the state of the runtime depending on the dialect (i.e. symbol intering)
-
-This is true even when using forms such as =progn= or =begin=, which
-might contain expressions that could change the behavior of the
-reader, and otherwise behave as if they evaluate all sub-expressions
-as if they were at the top level.
-
-which all share a nearly common
-
-Deeper levels of the behavior of lisp readers are also of significant
-interest, and quite a bit has been written about them cite:pitman95_ambit_evaluat.
-#+end_comment
 
 # https://dspace.mit.edu/bitstream/handle/1721.1/41117/AI_WP_082.pdf?sequence=4 not sure if need/want
 
@@ -226,30 +169,18 @@ apparent absence of any discussion of charachter literal syntax in
 cite:monnier20_evolut_emacs_lisp, despite its coverage of nearly every
 other aspect of the language.]
 
-#+begin_comment
-See [[info:elisp#Basic Char Syntax]] for the current manual. =case
-'?':= in the implementation of read1 in lread.c is present in the
-initial revision of the emacs git repository and its implementation is
-essentially unchanged from the version of =lread.c= that is present in
-emacs 18.59, placing it at least that far back in time (see
-[[ftp://ftp.gnu.org/old-gnu/emacs/emacs-18.59.tar.gz]]).
-#+end_comment
-
-
 I start with an overview of the syntactic features of dialects, and
 then I evaluate their implementation complexity based on the class of
 language they fall into (regular, context-free, context-sensitive) or
 the language class dual which is the type of machine required to parse
 them, and then the number of additional states required to implement
-them as part of a hand written pushdown automata.
+them, the number of additional tokens, and the interactions with other
+features as part of a hand written pushdown automata
 # and whether the pattern required to implement that behavior is
 # present in another feature ?? e.g. string and verbatim atom
 
-Lisp syntax provides a tractable arena in which to examine in detail
-common tradeoffs when designing a surface syntax.
-
-_This is an experience report on implementing a flexible lisp reader,_
-_specifically with regard to implementation complexity._
+This is an experience report on implementing a flexible lisp reader,
+specifically with regard to implementation complexity.
 
 It is also a survey of the edge cases and gotchas that anyone trying
 to implement a complete lisp reader might want to be aware of.
@@ -257,36 +188,23 @@ to implement a complete lisp reader might want to be aware of.
 When choosing the features for a surface syntax, implementation
 complexity is one of the key considerations since it impacts the
 security of the format and may limit its use as an exchange format.
+
 In the context of robust systems for an uncertain future, having a
 simple surface syntax also makes it more likely that new
 implementations will at the very least be able to parse code written
 in the language without a risk that some critical piece uses a feature
 that is not supported by the sane subset of the language.
 
-On the other hand, context free languages surface syntax may not
-always be as ergonomic for some users as a context sensitive language,
-the tradeoff here is
-
 The complexity of surface syntax is also a security issue for exchange
 formats.  Treating lisp code as data means that the complexity class
 required to parse just the surface syntax can make certain features
 security risks, beyond the fact that features that are harder to
 implement are more likely to be implemented incorrectly. While
-s-expressions are often touted as an ideal exchange format, and most
-dialects examined are subject to the same kinds of risks as XML
-cite:spath2016sok, there are features such as ~*read-eval*~ in Common Lisp,
-vector literal evalution in Clojure,
-that have similar
-
-syntactic innovations have to be weighed carefully
-with such issues kept in mind as one dialect has already (perhaps
-accidentally) become a context-sensitive language.
-
-#+note: move-to-conclusion
-One area with massive amounts of complexity and diversity, which is
-not address in this paper is the syntax for reading numbers. A paper
-similar to this one that pays as much attention to number literals as
-this one does to character literals could easily be written.
+s-expressions are often used as an exchange format, and most dialects
+examined are not subject to the same kinds of risks as XML
+cite:spath2016sok, there are features such as ~*read-eval*~ in Common
+Lisp and Clojure that have similar risks, though those risks are
+clearly documented.
 
 Our investigation is primarily into three major lineages of the Lisp
 dialects --- Maclisp, Scheme, and Clojure.
@@ -312,25 +230,167 @@ Lisp                       Runtime
      ╰─ Fennel             Lua
 \end{verbatim}
 #+end_figure
-* TODO feature/state counts
-How many additional states does it take to implement additional
-features in a lisp grammar?
-* Implementation approach
-# aka methods
-The reader was implemented by creating a number of simple test strings
-that should pass, and then feeding the parser files from various
-dialects, each time an issue was encountered further tests were
-written as examples of the edge case, the implementation of the reader
-was then updated until it could correctly parse those new test cases.
+** extra :noexport:
+#+begin_comment
+is a veiled threat lurking behind the designation of ~#~ being an indicator
+of
 
-In depth testing of the output of the walk phase has not been
-conducted, and there are known issues where forms are read
+Despite this, there is an abundance of complexity
+lurking behindg
+
+Other candidates for similar levels of simplicity are
+
+
+Compliant C parsers require upwards of 10k
+states to correctly parse C grammar.
+#+end_comment
+
+#+begin_comment
+become apparent to new visitors exploring Lisps at
+different rates. One set of issues that is difficult for beginners to
+discover, is the corner cases in the surface syntax of a
+language. Lisp syntax is simple enough that there are few ambiguous or
+unreconciable differences between dialects, however, there are a few.
+#+end_comment
+
+#+begin_comment
+Without dwelling on the long standing issues with the alieness of
+s-expressions to many novices, the nuance. The simplicity of the
+syntax
+
+Veteran lispers almost certainly know much of the content discussed
+here implicitly.
+
+The nuances are a source of much potential pain.
+#+end_comment
+
+#+begin_comment
+Note that this atomicity is only about the divisibility of a top level
+expression into sub-expressions (e.g. a list of lists) with respect to
+changes in the behavior of the reader. The act of reading may induce
+changes into the state of the runtime depending on the dialect (i.e. symbol intering)
+
+This is true even when using forms such as =progn= or =begin=, which
+might contain expressions that could change the behavior of the
+reader, and otherwise behave as if they evaluate all sub-expressions
+as if they were at the top level.
+
+which all share a nearly common
+
+Deeper levels of the behavior of lisp readers are also of significant
+interest, and quite a bit has been written about them cite:pitman95_ambit_evaluat.
+#+end_comment
+
+#+begin_comment
+See [[info:elisp#Basic Char Syntax]] for the current manual. =case
+'?':= in the implementation of read1 in lread.c is present in the
+initial revision of the emacs git repository and its implementation is
+essentially unchanged from the version of =lread.c= that is present in
+emacs 18.59, placing it at least that far back in time (see
+[[ftp://ftp.gnu.org/old-gnu/emacs/emacs-18.59.tar.gz]]).
+#+end_comment
+
+#+begin_comment
+ [fn::Fennel switched to use the more
+traditional comma as unquote in version 3.0]
+Surface syntax is the principle interface by which
+users and machines interact with a , are there effective designs for
+concrete syntax that we can identify by examining the trade offs that
+have been made in different lisp lineages?
+
+
+This apparent simplicity has attracted thousands of programmers over
+the years to implement toy Lisps as learning exercises [fn::Take a
+look at https://github.com/search?q=lisp].
+#+end_comment
+
+# At the edge of a very shallow pool. It is possible to drown in 2 inches of water.
+
+# FIXME pretty sure this is just a distraction
+#+begin_comment
+The complexity in the internals of all mature Lisps is beyond 
+Trying to understand the impact of these deeper choosing one set of features or
+another 
+#+end_comment
+
+# doi:10.1016/j.tcs.2020.08.022
+# On the semantic equivalence of language syntax formalisms
+
+At issue here are the subtle differences in the exact rules which lead
+to incompatiblity or ambiguity between parses of the same source by
+different dialects. Some of these are obvious, others are superb
+pitfalls that any trapper would be proud to have constructed.
+
+The Lisp family abstract syntax generates an arbitrary number of
+isomorphic concrete syntaxes, so variants such as Clojure's use of
+tilde ~~~ for unquote come as no surprise. In fact, if anything it is
+surprising that there has not been more variation.
+
+
+These differences are often not immediately apparent to users due to
+overlaps in the concrete syntax of different dialects, as well to the
+fact that the surface syntax @@comment:, perhaps moreso in Lisp than
+in any other language besides assembly,@@ gives little to no
+indication about the underlying differences in the semantics of the
+language or the features of the runtime.
+
+Thus for example, the differences between ~dynamic-wind~ and
+~unwind-protect~ cite:pitman_unwind_protect_vs_cc are rendered
+fundamentally esoteric with respect to surface syntax. This
+exemplifies one of the many trade-offs that languages have to make in
+balancing implementation complexity and usability.
+
+Lisp syntax provides a tractable arena in which to examine in detail
+common tradeoffs when designing a surface syntax.
+
+On the other hand, context free languages surface syntax may not
+always be as ergonomic for some users as a context sensitive language,
+the tradeoff here is
+
+syntactic innovations have to be weighed carefully
+with such issues kept in mind as one dialect has already (perhaps
+accidentally) become a context-sensitive language.
+
+* Approach
+# aka methods
+The original use case for sxpyr was to create a library for parsing
+s-expressions so that they be used as a sane alternative to yaml.
+Along the way it grew into a configurable parser for lisp dialects,
+inspired by a long standing curiosity about the challenges of
+implementing a common runtime environment where different Lisp
+dialects can mingle.
+
+The sxpyr reader was implemented by first creating a number of short
+test strings that should pass. Once those were parsed correctly the
+parser was then fed files from various Lisp dialects, each time an
+issue was encountered further tests were written as examples of the
+edge case, the implementation of the reader was then updated until it
+could correctly parse those new test cases.
+
+In-depth testing of the output of the walk phase (discussed below) has
+not been conducted, and there are known issues where forms are read
 incorrectly.
+** Previous work
+Prior to this work, a parser for Racket was written using a parser
+combinator library https://github.com/tgbugs/parsercomb.  Its coverage
+of Racket language features is incomplete, it does not handle edge
+cases correctly, it skips creating a common abstract syntax tree, and
+parses directly into the underlying host representation. Overall it is
+smaller, and here strings were easy to implement, but parser
+combinators are significantly more powerful than the state machine
+used to implement the sxpyr parser, since it has arbitrary
+lookahead. The expressiveness of the parser combination approach means
+that the portion of the implementation that deals directly with the
+concrete syntax of Racket is significantly smaller than the sxpyr hand
+written state machine. However, conceptually parser combinators are
+significantly more complex and require a deeper understanding of
+higher order functions than the naive approach used to implement
+sxpyr.
 * Overview of the sxpyr reader
 ** General approach
 The sxpyr reader is implemented using a hand written pushdown automata
 (PDA) that parses a stream of characters in a single pass without
-lookahead. With three exceptions (discussed below), this is sufficient
+lookahead. With some exceptions (discussed below), this is sufficient
 to parse all examined dialects.
 
 The choice to implement the parser by mimicking a pushdown automaton as
@@ -365,7 +425,7 @@ Using a pushdown automaton in place of a regular expression engine and
 treating individual characters as tokens hides
 
 the complexity of parsing multibyte charachters and dealing with
-character encoding [fn:unicode]. Sufficient ink has been spilled on
+character encoding [fn::unicode]. Sufficient ink has been spilled on
 the complexity of properly implementing character encoding. A brief
 look under the hood of any number of open source lisp implementations
 will reveal a veritable Pandora's box that we are going to sweep under
@@ -393,30 +453,35 @@ In detail the parser itself is closure
 
 ** Phases
 The sxpyr reader is split into 3 phases, parsing, walking, and
-casting.
+casting (Figure ref:fig-phases).
 
 Parsing converts an input stream of characters into an abstract syntax
-represntation. In other contexts it would be considered the combination
-of tokenization and parsing.
+representation. In other contexts it would be considered the
+combination of tokenization and parsing.
 
 Unlike many implementations, escape sequences are a part of the
-abstract shared syntax between dialects. This is because escape codes
+abstract syntax shared between dialects. This is because escape codes
 represent one of the largest areas of variability in between dialects,
 so deferring resolution vastly simplifies parsing to the ast.
 
 Walking converts the dialect agnostic abstract syntax tree into a
 dialects specific (but still abstract) data types.
 
-Any case conversion is deferred for as long as possible, and is not
-done in the
+Any case conversion is deferred for as long as possible, in the case of
+Common Lisp this means that the case conversion must happen during the
+walking phase when escapes are processed.
 
+Casting converts the dialect specific data types into the data
+structures in the host language. This step is not necessary and could
+be substituted with any number of other steps depending on the exact
+use case.
 of the critically, this involves resolving all escape sequences, because we defer
 resolution of escape sequences
 
+*** extra :noexport:
 , and is the combination of what is referred to elsewhere
 as tokenization and parsing.
 
-Casting
 *** phases figure :ignore:
 # you will need to `org-babel-lob-ingest' developer-guide.org for this
 #+name: fig-reader-phases-gen
@@ -474,6 +539,7 @@ digraph G {
 }
 #+end_src
 
+#+name: fig-phases
 #+caption: Phases of parsing.
 #+RESULTS[39d0c140ffc39dfacff06f855511299eaae2d57e]: fig-reader-phases
 [[file:./images/reader-phases.png]]
@@ -494,7 +560,7 @@ completing each nested expression.
 
 However, for our purposes this approach obscures the trees for the
 
-In the vertical approach the issue is that at any time the state of
+In the pipelined approach the issue is that at any time the state of
 the parse tree can be a mixture of abstract syntax and dialect
 specific syntax at the same time. That is to say, for the purposes of
 understanding what is going on if one were to inspect the internal
@@ -502,71 +568,85 @@ state of the more complex reader, one would never see the conceptually
 important abstract syntax tree =LP(A(a), LP(A(B)))= at any point
 during execution.
 
-#+caption: Horizontal phased reader. Vertical pipelined reader.
-#+caption: A Atom (abstract), LP ListParen (abstract), Id Identifier (dialect), List (dialect)
+#+caption: Parsing ~(a (b))~ with phased or pipelined approach.
+#+caption: Abstract types: A Atom , LP ListParen, Dialect types: Id Identifier, List
 #+name: fig-pipelining
-#+begin_example
-"(a (b))" -> LP(A(a), LP(A(B))) -> List(Id(a), List(Id(b)))
-|
-v
-"a" -> A(a) -> Id(a)
-"b" -> A(b) -> Id(b)
-"(" Id(b) ")" -> LP(Id(b)) -> List(Id(b))
-"(" Id(a), List(Id(b)) ")" -> LP(Id(a), List(Id(b))) -> List(Id(a), List(Id(b)))
-#+end_example
+#+begin_figure
+\begin{verbatim}
+Transformations           Flow Phase 
+List(Id(a), List(Id(b)))    <- dialect
+   LP(A(a),    LP(A(b)))    <- ast       ^ phased
+ "(     a          (b)   )"    stream    START
+                   "b"      -> stream    v pipelined
+                  A(b)      -> ast
+                 Id(b)      -> dialect
+       "a"   "(" Id(b)  ")" -> dialect + stream
+      A(a)    LP(Id(b))     -> dialect + ast
+     Id(a)  List(Id(b))     -> dialect
+ "(" Id(a), List(Id(b)) ")" ->
+  LP(Id(a), List(Id(b)))    ->
+List(Id(a), List(Id(b)))       dialect
+\end{verbatim}
+#+end_figure
 
-** Exceptions, known issues, and missing features
+** Issues
 One note on the PDA implemented in sxpyr is that it conflates states
 and stack values which can technically to be two different sets of
 values.
 *** Common Lisp
-Reader macros.
-Dispatch macros.
-Feature expressions.
+- Not implemented: Reader macros.
+- Not implemented: Dispatch macros.
+- Partially implemented: Feature expressions.
 *** Racket
-- Here strings.
+- Not Implemented: Here strings. These significantly increase the
+  complexity of the parser since they effectively require the storage
+  of an arbitrary string that is only known at runtime.
+- Overly permissive: Multi-char dispatch macros that do not allow
+  spaces e.g. =#hash()= and =#hash ()= read the same way which more
+  permissive than what Racket allows cite:flatt21rktref.
 - Files with =.rkt= extension that have alternate syntax embedded.
   For example =#lang at-exp=, or =#lang 2d=
-- Multi-char dispatch macros that do not allow spaces.  Ambiguity
-  between the reading of =#hash((a . 1) (b . 2))= vs =#hash ((a . 1)
-  (b . 2))=.  Induces major complexity because every single multi-char
-  dispatch has to be handled as a special case.  This design can be
-  relaxed and multi-char dispatch macros can be treated as their own
-  syntactic form. In the current Racket syntax all the instance of the
-  dispatch macros do not actually induce a separate state in the
-  reader, so despite the fact that the string-like structures read by
-  ~"~ and ~#rx"~ could in principle have different rules, in actuality
-  they do not. This means that ~#rx~ could be read as a multichar
-  dispatch macro, and that in principle ~#r~ could as well if it was
-  followed by any of the usual atom terminating tokens.  This would
-  significantly simplify the Racket reader without loss of
-  expressivity.
+**** extra :noexport:
+Ambiguity between the reading of =#hash((a . 1) (b . 2))= vs =#hash
+((a . 1) (b . 2))=.  Induces major complexity because every single
+multi-char dispatch has to be handled as a special case.  This design
+can be relaxed and multi-char dispatch macros can be treated as their
+own syntactic form. In the current Racket syntax all the instance of
+the dispatch macros do not actually induce a separate state in the
+reader, so despite the fact that the string-like structures read by
+~"~ and ~#rx"~ could in principle have different rules, in actuality
+they do not. This means that ~#rx~ could be read as a multichar
+dispatch macro, and that in principle ~#r~ could as well if it was
+followed by any of the usual atom terminating tokens.  This would
+significantly simplify the Racket reader without loss of expressivity.
 
 *** Hy
-=#[strings]= violate the expectations all other lisps.
+- Omitted =#[strings]=. It also violate the expectations of nearly all other lisps.
 *** Scheme
-=#{}#= I think?
+- Not Implemented: =#{}#= verbatim atom syntax in guile.
 *** Elisp
-Alternate text encodings.
-Conflation of characters and control sequences.
+- Not impelemented: Alternate text encodings.
+- Parsing charachter literals does not currently use the PDA formalism
+  due to the conflation of characters and control sequences in elisp.
 *** XEmacs
-context sensitive unquote
-** Previous work
-Prior to this work a parser for Racket was written using a parser
-combinator library.  Its coverage of Racket language features is
-incomplete, it does not handle edge cases correctly, it skips creating
-a common abstract syntax tree, and parses directly into the underlying
-host representation. Overall it is smaller, and here strings were easy
-to implement, but parser combinators are significantly more powerful
-than the state machine used to implement the sxpyr parser, since it
-has arbitrary lookahead. The expressiveness of the parser combination
-approach means that the portion of the implementation that deals
-directly with the concrete syntax of Racket is significantly smaller
-than the sxpyr hand written state machine. However, conceptually
-parser combinators are significantly more complex and require a deeper
-understanding of higher order functions than the naive approach used
-to implement sxpyr.
+- Parsing unquote violates the PDA formalism, and inspects the stack,
+  moving XEmacs Lisp into the family of context-sensitive languages.
 * Common abstract syntax
+The core abstract syntax shared between the dialects examined in this
+paper can be see in Figure ref:fig-ast-simple. There are two syntactic
+forms that that are latent in existing dialects that could be useful
+if implemented formally.  One is multichar dispatch, these would be
+read like keywords but would wrap the next expression automatically
+like quote. The other are Wraps Next N, which function like Common
+Lisp feature expressions. In a PDA implementation they can function by
+pushing n values onto the stack and transitioning to a state where two
+stack values should be popped at the end of each expression. There is
+a slight variant of these two as well which could be used to implement
+the racket =#lang= line more generally, which is to allow the
+multi-char dispatch macros themselves to act as a delimiter. This of
+course should raise the question of whether or not a tokenization pass
+might simplify matters.
+** extra :noexport:
 This is almost certainly due to the fact that nearly every lisp
 dialect has at its core an abstract syntax that is implemented (or
 could be implemented) as cons pairs. Even modern descendants such as
@@ -576,8 +656,9 @@ https://github.com/ruricolist/cloture. Of course cons pairs could be
 used to implement just about anything as elisp shows, the key is in
 the amount of work that it takes.
 
-** Abstract tokens
-
+** TODO Abstract tokens                                            :noexport:
+# not quite sure how to present these
+*** tokes list                                                 :noexport:
 =nifstd_tools= docs for ast extraction
 also pyontutils.utils asStr
 
@@ -702,7 +783,47 @@ list-like : list-paren
           | list-square
           | list-curly
 #+end_src
-*** Families
+*** Token types :noexport:
+multi-char tokens
+
+*** Missing pieces :noexport:
+Where does my expression end?
+** Abstract syntax classes :ignore:
+#+caption: Modifiers =e= has an escaped variant, =i= arbitrary internal syntax, =*= proposed
+#+caption: This list is not exhaustive, because one failure mode is =Dispatch(Atom)=
+#+caption: which reads ambiguously and from which the original stream cannot be recovered with sufficient certainty.
+#+name: fig-ast-simple
+#+begin_figure
+\begin{verbatim}
+Ast
+ ├─ Paired delimited         Modifiers
+ │   ├─ List Like
+ │   ├─ Comment              (i)
+ │   ├─ Block Comment        (i)
+ │   ├─ Heading Comment      (i *)
+ │   ╰─ Racket Lang Line
+ ├─ Single delimited
+ │   ├─ String               (e i)
+ │   ╰─ Verbatim Atom        (e i)
+ ├─ Atom Like
+ │   ├─ Atom                 (e)
+ │   ├─ Keyword              (e)
+ │   ╰─ Multichar Dispatch   (*)
+ ├─ Charachter Specification (e)
+ ├─ Escape Code
+ │   ├─ Escape
+ │   ╰─ String Escape
+ ╰─ Quote Like
+     ├─ Quote
+     ├─ Syntax
+     ├─ {Quasi Un SplicingUn}{Quote Syntax}
+     ├─ Expression Comment
+     ├─ Dispatch
+     ╰─ WrapsNextN
+         ╰─ FeatureExpr
+\end{verbatim}
+#+end_figure
+*** extra                                                          :noexport:
 Delimiter
 Paired Delimiter
   Comment
@@ -716,39 +837,7 @@ wraps-next : expression :: escape : char
 
 discard
 well-formed
-
-#+caption: =e= has an escaped variant, =i= arbitrary internal syntax, =*= proposed
-#+caption: This list is not exhaustive, because one failure mode is =Dispatch(Atom)=
-#+caption: which reads ambiguously and from which the original stream cannot be recovered with sufficient certainty.
-#+name: fig-ast-simple
-#+begin_example
-Ast
- ├─ Paired delimited
- │   ├─ List Like
- │   ├─ Comment (i)
- │   ├─ Block Comment (i)
- │   ├─ Heading Comment (i,*)
- │   ╰─ Racket Lang Line
- ├─ Single delimited
- │   ├─ String (e,i)
- │   ╰─ Verbatim Atom (e,i)
- ├─ Atom Like
- │   ├─ Atom (e)
- │   ├─ Keyword (e)
- │   ╰─ Multichar Dispatch (*)
- ├─ Charachter Specification (e)
- ├─ Escape Code
- │   ├─ Escape
- │   ╰─ String Escape
- ╰─ Quote Like
-     ├─ Quote
-     ├─ {Quasi,Un,SplicingUn}{Quote,Syntax,...}
-     ├─ Expression Comment
-     ├─ Dispatch
-     ╰─ WrapsNextN
-         ╰─ FeatureExpr
-#+end_example
-**** class trees :noexport:
+*** class trees                                                    :noexport:
 # #+latex: {\fontfamily{dsm}\selectfont
 
 #+call: fig-sxpyr-ast-tree() :results org :exports results
@@ -790,7 +879,7 @@ Ast
 #+end_src
 # #+latex: }
 
-#+call: fig-sxpyr-ddt-tree() :results org :exports neither
+#+call: fig-sxpyr-ddt-tree() :results org :exports none
 
 #+RESULTS:
 #+begin_src org
@@ -805,14 +894,9 @@ DataType
      ├─ Dict
      ╰─ ByteCode
 #+end_src
-
-*** Token types
-multi-char tokens
-
-*** Missing pieces
-Where does my expression end?
-** Features
-*** Top level s-expressions are the transactional unit of reading.
+** Features :noexport:
+*** Top level s-expressions are the transactional unit of reading. :noexport:
+# covered in intro
 this didn't have to be the case, re: pitman, but pretty much no language
 does a partial read before the last close paren.
 *** Reader macros
@@ -828,28 +912,8 @@ below the level of the surface syntax.  In his HOPL paper RH mentions
 of the fact that most historical lisp readers intern symbols in
 packages, making the reader stateful.
 * Diverse concrete syntax
-The underlying features define a whole family of languages that
-are equivalent under symbol renaming.
-** Reader behavior recapitulates the family tree
-If we treat programming languages as evolutionary systems, then it is
-possible to produce dendrogram using a subset of their phenotypes
-in order to approximate their lineage.
-
-This is orthognoal to the actual history of their source code.  For
-example, it would be expected that SBCL and CMUCL would share
-phenotypes related to performance and behavior in certain edge cases
-that were unspecified by the standard since the SBCL code base is a
-descendant and shares significant commonalities.
-
-One other major source of prior information that contrains behavior
-of implementations and provides a kind of static information akin to
-DNA, are standards documents or specification documents. For example
-CLtL2, R5RS, ANSI INCITS 226-1994 (S20018).
-
-As one would expect, it is possible to recapitulate the phylogeny of
-Lisp dialects looking only at the edge case behavior of their readers.
-
-# TODO dendrogram
+# The underlying features define a whole family of languages that are
+# equivalent under symbol renaming.
 ** Common tokens
 #+name: tbl-common-toks
 #+caption: common abstract tokens and their concrete equivalents
@@ -866,16 +930,28 @@ Lisp dialects looking only at the edge case behavior of their readers.
 | unquote        | ~,~ ~~~        | rest support> Clojure |
 | keyword        | ~#:~ ~:~       | Scheme support> rest  |
 
-In most cases variant concrete syntax has some asymmetry between
-dialects because one of the variant forms already has meaning in the
-concrete syntax of another dialect.  For example in Common Lisp ~#:~
-starts an uninterned symbol, and thus cannot be used as in the scheme
-lineage to start a keyword.  However the reverse is not the case,
-scheme has no reserved syntax for ~:~. Following these asymmetries it
-is possible to arrive at concrete syntax that can in principle be
-implemented without conflict across all dialects.
+Table ref:tbl-common-toks shows that variant concrete syntax often has
+some asymmetry between dialects because one of the variant forms
+already has meaning in the concrete syntax of another dialect.  For
+example in Common Lisp ~#:~ starts an uninterned symbol, and thus
+cannot be used as in the scheme lineage to start a keyword.  However
+the reverse is not the case, scheme has no reserved syntax for
+~:~. Following these asymmetries it is possible to arrive at concrete
+syntax that can in principle be implemented without conflict across
+all dialects.
 
-** Variability
+*** extra :noexport:
+#+name: tbl-uncommon-toks
+#+caption: Uncommon but consistent tokens
+| abstract token | concrete token               |   |
+|----------------+------------------------------+---|
+| block comment  | ~#~\vert{} \vert{}\texttt{#} |   |
+| expr comment   | ~#;~ ~#_~                    |   |
+|                |                              |   |
+
+
+
+** Variability :noexport:
 | abstract token     | cl | clj       | el   | scm            |
 |--------------------+----+-----------+------+----------------|
 | list like          |    | ~[]~ ~{}~ | ~[]~ | paired to ~()~ |
@@ -884,6 +960,22 @@ implemented without conflict across all dialects.
 | verbatim atom      |    |           |      |                |
 | char               |    |           |      |                |
 
+** Diverse behavior
+#+macro: nil ~∅~
+#+macro: pipe \vert{}
+#+macro: pipetest1 \texttt{'}\vert{}\texttt{a}\vert{}\texttt{b}
+# #+macro: pipe (eval (format "~%s~" (a-pipe)))
+# #+macro: pipetest1 (eval (format "~%sa%sb~" (a-pipe) (a-pipe)))
+
+#+caption: Dialect edgecases.
+#+name: tbl-dialect-literacy
+| dialect         | CL   | scm  |       |           | rkt  | el  | clj      | Hy      |
+| impl            | all  | cz   | ga    | gu        | all  |     | Java/js  | py      |
+|-----------------+------+------+-------+-----------+------+-----+----------+---------|
+| ~'a'b'c~        | ~C~  | ~c~  | ~c~   | *~a'b'c~* | ~c~  | ~c~ | ~a'b'c~  | ~c~     |
+| ~'a`b~          | ~B~  | ~b~  | ~b~   | ~a`b~     | ~b~  | ~b~ | ~user/b~ | *~a`b~* |
+| {{{pipetest1}}} | ~aB~ | ~ab~ | *err* | *err*     | ~ab~ |     |          |         |
+
 ** A common subset
 In search of a common safe concrete surface syntax that can capture
 the 80% use case and that works across all dialects examined here, or
@@ -891,11 +983,20 @@ that can be made to work with minimal implementation by selecting
 forms that are more easily implemented by certain dialects.
 
 This does drag us down to the lowest common denominator, however that
-actually gets is quite a long ways toward where we want to go.
+actually gets us quite a long ways toward where we want to go.
 #+begin_src lisp
-(list atom :keyword "string" 'quote '(quoted list of things)) ; comment
+;; common syntax
+((list)
+#(vector)
+atom
+:keyword
+"string"
+'quote
+'(quoted list of things)
+) ; comment
 
-; not quite so commone
+
+;; not quite so commone
 `(quasiquote ,unquote ,@(splicing-unquote))
 #+end_src
 *** random though :noexport:
@@ -904,7 +1005,140 @@ implicit quasiquote
 (let ((a 1) (b 2))
 )
 #+end_src
+** Reader behavior recapitulates the family tree
+If we treat programming languages as evolutionary systems, then it is
+possible to produce dendrogram using a subset of their phenotypes in
+order to approximate their lineage.
+
+This is orthognoal to the actual history of their source code.  For
+example, it would be expected that SBCL and CMUCL would share
+phenotypes related to performance and behavior in certain edge cases
+that were unspecified by the standard since the SBCL code base is a
+descendant and shares significant commonalities.
+
+One other major source of prior information that contrains behavior of
+implementations and provides a kind of static information akin to DNA,
+are standards documents or specification documents. For example CLtL2,
+R5RS, ANSI INCITS 226-1994 (S20018).
+
+As one would expect, it is possible to recapitulate the phylogeny of
+Lisp dialects looking only at the edge case behavior of their readers.
+
+# TODO dendrogram
+* Free floating variability :noexport:
+** extra :noexport:
+
+Token variants
+| dialect         | CL         | RnRS       |            |                   | rkt        | el        | clj       | Hy        | fnl       |
+| impl            | all        | chez       | ga         | gu                | all        |           | Java/js   | py        | Lua       |
+|-----------------+------------+------------+------------+-------------------+------------+-----------+-----------+-----------+-----------|
+| char            | ~#\~       | ~#\~       | ~#\~       | ~#\~              | ~#\~       | ~?~       | ~\~       | {{{nil}}} |           |
+| vatom           | {{{pipe}}} | {{{pipe}}} | {{{pipe}}} | ~#{}#~ {{{pipe}}} | {{{pipe}}} | {{{nil}}} | {{{nil}}} | {{{nil}}} | {{{nil}}} |
+| XCom            | ~#+()~     | ~#;~       | ~#;~       | ~#;~              | ~#;~       | {{{nil}}} | ~#_~      | ~#_~      |           |
+| ~\~             | esc  | esc  | esc   | esc       | esc  | esc | char     | ~\~     |
+
+
+
+| dialect | impl       | ~(and 'a'b'c)~ | ~(and 'a`b)~ | {{{pipe}}}        | {{{pipetest1}}} | ~\~  | char      | XComment  |
+|---------+------------+----------------+--------------+-------------------+-----------------+------+-----------+-----------|
+| CL      | sbcl       | ~C~            | ~B~          | {{{pipe}}}        |                 | esc  | ~#\~      | ~#+()~    |
+| RnRS    | chez       | ~c~            | ~b~          | {{{pipe}}}        |                 | esc  | ~#\~      | ~#;~      |
+|         | gambit     | ~c~            | ~b~          | {{{pipe}}}        |                 | esc  | ~#\~      | ~#;~      |
+|         | guile      | *~a'b'c~*      | ~a`b~        | ~#{}#~ {{{pipe}}} |                 | esc  | ~#\~      | ~#;~      |
+| Racket  | cs         | ~c~            | ~b~          | {{{pipe}}}        |                 | esc  | ~#\~      | ~#;~      |
+| elisp   | GNU Emacs  | ~c~            | ~b~          | {{{nil}}}         |                 | esc  | ~?~       | {{{nil}}} |
+| Clojure | Java       | ~a'b'c~        | ~user/b~     | {{{nil}}}         |                 | char | ~\~       | ~#_~      |
+|         | ECMAScript | ~a'b'c~        | ~user/b~     | {{{nil}}}         |                 | char | ~\~       | ~#_~      |
+| Hy      | Python     | ~c~            | *~a`b~*      | {{{nil}}}         |                 | ~\~  | {{{nil}}} | ~#_~      |
+| Fennel  | Lua        |                |              | {{{nil}}}         |                 |      |           |           |
+
+* Interactions between syntax features are a major source of variability :noexport:
+Escape and verbatim atoms and atoms.
+String escape vs chars.
+** Block comments and escape.
+# I think I missed this one.
+#+begin_src lisp
+#|
+oh boy watch #\| this
+|#
+#+end_src
+
+#+begin_src racket :lang racket
+#|
+wat #\|
+|#
+#+end_src
 * Quantifying implementation complexity
+
+The number of states required per feature is one per the number of
+individual tokens that must occur together in order to shift the
+state. So for example all single character dispatch macros require two
+states. With the exception of multi-char dispatch macros, the
+complexity comes from the interaction that any given feature has with
+other features.
+
+Multi-char dispatch macros require as many states as one more than the
+number of characters. Racket makes extensive use of these. Given that
+the multi-char dispatch macros produce a syntax error if they appear
+by themselves it should be possible to relax the constraints present
+in Racket so that they can be parsed like atoms and then work like
+feature expressions, significantly reducing the implementation
+complexity and increasing composability. Taking this approach
+does not remove the complexity, it merely shifts it to a later phase
+and requires a set of known dispatch macros and a mapping for each
+of those to a set of valid ast nodes that can be wrapped.
+
+Data exchange formats are a fraught business, especially if they are
+encoded in something that is human readable. Lisp exists on the Zalgo
+frontier. It is very much not a regular language, however it is
+obviously so in ways that html and xml are not. In a sense the
+alieness of all the parentheses and the positively offensive nature of
+their nesting acts as a kind of ward against naive attempts to use
+regular expressions +to unlock the secrets of otherwhere+ as
+substitute for real parsing.
+** extra :noexport:
+
+#+begin_comment
+In theory one might be able to also specify whether they must end in
+something other than whitespace? Probably not.
+#+end_comment
+
+#+begin_src racket :exports none
+(define-dispatch-macro rx
+  #:wraps (string? bytes?))
+#+end_src
+
+#+name: fig-feat-states
+| feature            |                                        number of states |
+|--------------------+---------------------------------------------------------|
+| Atom               |                                                       1 |
+| Keyword            |                                                       1 |
+| List Like          |                                                       1 |
+| Comment            |                                                       1 |
+| Block Comment      | 2 [fn::Implementation at time of writing is incorrect.] |
+| Dispatch           |                                                       1 |
+| String             |                                                       1 |
+| Escape             |                                                       1 |
+| Character          |                                                       2 |
+| Quote Like         |                                                       1 |
+| Unquote + Splice   |                                                       2 |
+|--------------------+---------------------------------------------------------|
+| Here documents     |                                                       ? |
+| Multichar Dispatch |                                                       ? |
+| Reader macros      |                                                         |
+| Dispatch macros    |                                                         |
+
+# FIXME block comments should be just two states right?
+# why do we need an explicit state for a nested block comment?
+# because of the exit?
+
+There is also a certain knowledge burden that is required to implement
+such things if one has not previous encountered this knowledge
+somewhere.
+
+It is slightly protected 
+
+
 
 I limited my review of reader codebases for code licensing reasons, but
 one general issue is that readers for many dialects are often implemented
@@ -916,7 +1150,7 @@ need to be maintained (elisp is likely the number one offender here).
 
 Adding a feature flag or equivalent to re-enable the old bad behavior
 is also a non-starter. Not clear that this is worse than other languages.
-** Survey of reader implementations
+** Survey of reader implementations :noexport:
 | dialect    | impl   | native reader |
 |------------+--------+---------------|
 | CL         | sblc   | yes           |
@@ -927,7 +1161,7 @@ is also a non-starter. Not clear that this is worse than other languages.
 |            |        |               |
 
 wowe cl is complex
-** Features
+** Features :noexport:
 *** Pushdown automata
 *** Context sensitive unquote
 *** Atom/keyword allowed tokens
@@ -996,6 +1230,40 @@ Scheme and common lisp have different behavior.
 #+RESULTS:
 : #f
 
+**** BUT WAIT THERE'S MORE!
+What if I want a pipe in a symbol?
+Do pipes terminate verbatim atoms?
+
+# wow even ob-lisp is broken here and returns the wrong value
+#+begin_src lisp :results verbatim :wrap "src lisp"
+(list
+ (eq '|a\|b c| '|a\|b c|)
+ (symbol-name '|a\|b c|)
+ '|a\|b c|)
+'|a\|b c|
+#+end_src
+
+#+RESULTS:
+#+begin_src lisp
+|a\|b c|
+#+end_src
+
+# and this seems to break geiser
+#+begin_src scheme :scheme chez :session sess-chez
+'|a|b
+#+end_src
+
+#+begin_src scheme :scheme gambit :session sess-gambit
+'|a|b
+#+end_src
+
+#+RESULTS:
+
+#+begin_src scheme :scheme guile :results output :session sess-guile
+;(install-r7rs!) ; not available on 2.2 series
+(list '|a\| b c|)
+#+end_src
+
 **** extra :noexport:
 #+begin_src lisp
 (and '|\\|)
@@ -1021,13 +1289,19 @@ Not really an issue.
 *** Host language
 Clojure exemplifies the issues here, as does Hy.
 * Escape everywhere?
-Is escape behavior consistent in every context?
-Nope.
+:PROPERTIES:
+:header-args: :exports both :eval no-export
+:END:
+
+Escape behavior is in consistent between contexts and dialects.  There
+is a design tradeoff between keeping the behavior consistent between
+chars and strings vs between chars and atoms.
 ** Common Lisp
 Common Lisp does not have special syntax for escape codes in strings.
 Essentially this is because with the exception of its use in
 charachter literal syntax, any escape ~\~ is processed in the same way
 regardless of context. In strings and vertabim atoms this means that
+# " IT WAS YOU BREAKING MY ELECTRIC PAIR MODE EH!?
 ~\"~ and ~\|~ are the only meaningful escapes.
 # Which is to say, Common Lisp escapes first, and leaves everyone else
 # to sort out the hard problems.
@@ -1052,7 +1326,8 @@ consistency with the use of escape in other contexts can be quite
 confusing.
 
 #+begin_src elisp :results code
-(list (string ?\N{BOX DRAWINGS LIGHT VERTICAL}) "\N{BOX DRAWINGS LIGHT VERTICAL}")
+(list (string ?\N{BOX DRAWINGS LIGHT VERTICAL})
+      "\N{BOX DRAWINGS LIGHT VERTICAL}")
 #+end_src
 
 #+RESULTS:
@@ -1060,6 +1335,7 @@ confusing.
 ("│" "│")
 #+end_src
 
+Reading a newline? Or is it the character n?
 #+begin_src elisp :results code
 '(?\n "\n" "
 ")
@@ -1070,7 +1346,7 @@ confusing.
 (10 "\n" "\n")
 #+end_src
 ** Racket
-Racket occupies
+Racket and the schemes occupy a middle ground.
 #+begin_src racket :lang racket :results code
 ; "\Newline" as a string causes an error
 '(#\Newline  "\n" "
@@ -1082,7 +1358,8 @@ Racket occupies
 '(#\newline "\n" "\n")
 #+end_src
 ** Clojure
-Clojure supports a hybrid of both,
+Clojure supports a hybrid of both and follows more closely with scheme
+behavior.
 
 #+begin_src clojure
 '(\newline \n "\n" "\newline" "
@@ -1093,10 +1370,75 @@ Clojure supports a hybrid of both,
 : (\newline \n "\n" "\newline" "\n")
 
 * Chars: chaos incharnate
+Nearly every dialect examined has well specified charachter literal
+syntax if they have it at all cite:r5rs cite:r6rs cite:r7rs cite:cltl2
+cite:flatt21rktref. Despite this, as can be seen in Figure
+ref:char-reader-errors the behavior between dialects is inconsistent.
+Interestingly these behaviors do seem that they could be used as
+inputs to construct a phylogeny that would recapitulate the taxonomy
+presented in ref:fig-taxonomy.
+# TODO the rest of the documentation refs
+
 #+macro: e *=X=*
 #+include: "chars.org::char-reader-errors"
-** Two approaches: elisp and everyone else
-* Future directions
+# ** Two approaches: elisp and everyone else
+* Conclusion
+Despite the apparent simlicity of lisp syntax, it still is
+sufficiently complex to allow a diversity of behaviors to be evoked by
+the same strings of characters.
+
+The thread that unifies all the major areas of variability discussed
+in this paper are escape sequences, whether they appear in atoms,
+charachter literals, strings, or anywhere else.
+
+Hopefully this paper can provide guidance for uses of some of the
+dialects about how to avoid certain dialect specific pitfalls.
+
+I hope that this paper can serve as the starting point for a
+conversation about potential changes or updates to certain
+implementations or improvements in documentation to clarify the
+expected behavior when reading edge cases.
+
+An even more aspirational hope is that this paper might provide an
+impetus for dialects to examine the darker corners of their character
+literal syntax and probe their language communities to see whether a
+cleanup of some of the existing complexity might be possible.
+** extra :noexport:
+In conclusion, we have seen that the behavior of simple syntax
+can be quite various when dealing with edge cases
+
+The process of writing this paper has revealed a number of cases where
+various tools in Emacs do not correctly deal with the edge cases.
+
+The largest areas of variability in the dialects examined in this
+paper are charachter syntax, the interaction between escape sequences
+and verbatim atoms, and the interaction between verbatim atoms and
+atoms.
+
+# For example, for the GNU Emacs implementation, deal with the ~?\u{OH GOD WHY ARE THERE SPACES}~ syntax.
+
+In part this was originally prompted by another project to standardize
+Org syntax, and the discovery that a key stumbling block to that end
+was the fact that at the moment Org syntax implicitly includes all of
+Emacs lisp syntax, which would make implementing an alternate Org
+runtime at least partially dependent on having an implementation of
+Emacs lisp, of which there are two, slightly incompatible variants.
+
+
+
+
+Most of the behaviors are understandable.
+** Future directions
+One area with massive amounts of complexity and diversity, which is
+not address in this paper is the syntax for reading numbers. A paper
+similar to this one that pays as much attention to number literals as
+this one does to character literals could easily be written.
+
+Another future direction which is being pursued is to take some of the
+ideas opportunities revealed during this project and bring them for
+discussion to the Rhombus brainstorming design party [fn::
+https://github.com/racket/rhombus-brainstorming/].
+*** extra                                                          :noexport:
 More dialects. Gives more coverage, more phylogeny.
 
 A call to arms to specify, simplify, and regularize.
@@ -1111,27 +1453,15 @@ Encode more historical variants
 
 Start running over more codebases to determine whether changes to root out
 irregularities are feasible.
-* Conclusion
-I hope that this paper can serve as the starting point for a
-conversation about potential changes or updates to certain
-implementations or improvements in documentation to clarify the
-expected behavior when reading edge cases.
 
-In even more asperational hope is that this paper might provide an
-impetus for dialects to examine the darker corners of their character
-literal syntax and probe their language communities to see whether a
-cleanup of some of the existing complexity might be possible.
+Use the
 
-For example, for the GNU Emacs implementation, deal with the ~?\u{OH
-GOD WHY ARE THERE SPACES}~ syntax.
-
-In part this was originally prompted by another project to standardize
-Org syntax, and the discovery that a key stumbling block to that end
-was the fact that at the moment Org syntax implicitly includes all of
-Emacs lisp syntax, which would make implementing an alternate Org
-runtime at least partially dependent on having an implementation of
-Emacs lisp, of which there are two, slightly incompatible variants.
-* Xrefs
+Opportunities for dialects to simplify their grammar. Racket
+=#multichar= dispatch macros could be formalized in a way that would
+vastly simplify their function as quote-like modifiers of the next
+expression, removing many of the special cases that are required to
+implement them.
+* Xrefs :noexport:
 ** Reader implementations
 | Implementation |                                                                                      |  version | commit hash [fn:cv-misalign]             |
 |----------------+--------------------------------------------------------------------------------------+----------+------------------------------------------|
@@ -1170,9 +1500,7 @@ https://github.com/racket/racket/blob/master/racket/src/ChezScheme/s/read.ss
  | Hy             | https://docs.hylang.org/en/stable/language/syntax.html |
  |                |                                                        |
 
-* Acknowledgments
-Loads of people.
-
+* TODO Acknowledgments
 * Extras                                                           :noexport:
 ** Tradeoffs
 *** In surface syntax design
@@ -1234,6 +1562,25 @@ Have been able to identify undocumented or under-specified parts of the
 surface syntax of a variety of dialects.
 # TODO table on this maybe?
 * Code :noexport:
+** exmaples
+# XXX ob-clojure converting curlies to parens sigh
+#+begin_src clojure :results verbatim :wrap "src clojure"
+[#{1 2 (eval '(print 'lol))}
+ (let [*read-eval* true]
+   (read-string "#{1 2 #=(print 'lol)}"))
+ (let [*read-eval* nil]
+   (read-string "#{1 2 #=(print 'lol)}"))
+ (let [*read-eval* true]
+   (read-string "#{1 2 (eval '(print 'lol))}"))
+ (let [*read-eval* nil]
+   (read-string "#{1 2 (eval '(print 'lol))}"))]
+#+end_src
+
+#+RESULTS:
+#+begin_src clojure
+[#{ 1 2} #{ 1 2} #{ 1 2} #{1 2 (eval (quote (print (quote lol))))} #{1 2 (eval (quote (print (quote lol))))}]
+#+end_src
+
 ** python
 # #+begin_src python :results verbatim org :epilogue "return tree"
 #+name: py-helpers
@@ -1305,6 +1652,19 @@ print(tree_sexp)
 # #+call: sxpyr-ast-class-tree() :results value table raw
 #+call: sxpyr-ast-class-tree()
 
+*** lol org +macro pipe+ export brokenness                         :noexport:
+Actually the parsing of the macro has zero issues. Apparently
+something else is quite broken.  Like the table layout and processing
+interpreting pipes as if they were from the able even if they were
+inserted via a macro. Ouch, a nasty bug.
+#+begin_src elisp :eval never
+(defun a-pipe ()
+  "org mode macros are totally broken so we need this"
+  "|")
+
+;;; XXX MASSIVE HACK
+;;(setq-local org-macro-templates '(cons (("pipe" . "|")) org-macro-templates))
+#+end_src
 * References :ignore:
 # \printindex
 # bibliographystyle:unsrt  @@comment: this line is required to get things to render at all@@
