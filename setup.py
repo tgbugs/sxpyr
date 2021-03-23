@@ -15,19 +15,20 @@ __version__ = find_version('sxpyr/__init__.py')
 with open('README.org', 'rt') as f:
     long_description = f.read()
 
-tests_require = (['pytest',])
+cli_requires = ['pyontutils']  # FIXME should be orthauth but haven't moved clifun yet
+tests_require = ['pytest'] + cli_requires
                  
 setup(name='sxpyr',
       version=__version__,
       description='A flexible Lisp reader.',
       long_description=long_description,
-      long_description_content_type='text/markdown',
+      long_description_content_type='text/markdown',  # FIXME org -> markdown
       url='https://github.com/tgbugs/sxpyr',
       author='Tom Gillespie',
       author_email='tgbugs@gmail.com',
       license='MIT',
       classifiers=[
-          'Development Status :: 4 - Beta',
+          'Development Status :: 3 - Alpha',
           'License :: OSI Approved :: MIT License',
           'Programming Language :: Python :: 3.7',
           'Programming Language :: Python :: 3.8',
@@ -41,6 +42,7 @@ setup(name='sxpyr',
       python_requires='>=3.7',
       tests_require=tests_require,
       extras_require={'test': tests_require,
+                      'cli': cli_requires,
                      },
       scripts=[],
      )
