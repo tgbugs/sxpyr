@@ -30,6 +30,14 @@ then it is significantly increased in complexity. A stripped down
 version that is suitable for parsing a minimal sane dialect that can
 be used as a configuration language may be added in the future.
 
+* Usage
+#+begin_src bash
+git clone https://github.com/tgbugs/sxpyr.git
+pushd sxpyr
+python -m sxpyr.cli parse test/data/nested-splicing-unsyntax.rkt test/data/plist-test.sxpr
+popd
+#+end_src
+
 * Testing
 In order to run the tests you will need the following repos.
 - sbcl
