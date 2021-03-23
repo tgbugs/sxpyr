@@ -22,14 +22,22 @@ class WalkLazy(Walk):
 
 class WalkRkt(Walk):
 
-    _recurse_funs = (
-        (ISyntax, '_isyntax'),
-    ) + Walk._recurse_funs
+    #_recurse_funs = (
+        #(ISyntax, '_isyntax'),
+    #) + Walk._recurse_funs
+    _recurse_funs = Walk._recurse_funs
 
-    _is_funs = (
-        (USyntax, '_us_any'),
-        (SUSyntax, '_us_any'),
-    )
+    _q_funs = (
+        (USyntax, '_uq_any'),
+        (SUSyntax, '_uq_any'),
+    ) + Walk._q_funs
+
+    _unquote_family = ('usyntax', 'susyntax') + Walk._unquote_family
+
+    #_is_funs = (
+        #(USyntax, '_us_any'),
+        #(SUSyntax, '_us_any'),
+    #)  # FIXME add this to _iqfuns I think? they are all cross compatible XXX reduce duplication
 
     _type_funs = (
         (Syntax, 'syntax'),
@@ -38,15 +46,19 @@ class WalkRkt(Walk):
         (SUSyntax, 'susyntax'),
     ) + Walk._type_funs
 
+    _sh_funs = (
+        
+    ) + Walk._sh_funs
+
     lists = Walk.listp
     listc = Walk.listp
     atom = WalkLazy.atom
 
     def __init__(self):
         super().__init__()
-        self._usyntax, self._susyntax = self.usyntax, self.susyntax
+        #self._usyntax, self._susyntax = self.usyntax, self.susyntax
 
-    def _isyntax(self, ast):
+    def __isyntax(self, ast):
         # fake dynamic variables, non-threadsafe 
         try:
             # can't += because wraps next will match before these
@@ -59,7 +71,7 @@ class WalkRkt(Walk):
             self.usyntax, self.susyntax = self._usyntax, self._susyntax
             if debug: print('leave istx')
 
-    def _us_any(self, ast):
+    def __us_any(self, ast):
         # fake dynamic variables, non-threadsafe 
         try:
             self._recurse_funs = self.__class__._recurse_funs
@@ -88,9 +100,17 @@ class WalkRkt(Walk):
     # forms are used at the top level, if they are used inside of a
     # quoted form it will not complain not sure whether that is
     # intentional or not
-    def usyntax  (self, ast): raise SyntaxError('unsyntax not in quasisyntax')
-    def susyntax (self, ast): raise SyntaxError('unsyntax splicing not in quasisyntax')
+    def usyntax  (self, ast):
+        #breakpoint()
+        raise SyntaxError(f'unsyntax not in quasisyntax {ast}')
+    def susyntax (self, ast):
+        #breakpoint()
+        raise SyntaxError(f'unsyntax splicing not in quasisyntax {ast}')
 
+    #def sharp(self, ast):
+    #    """ unspecified dispatch macros """
+    #    value = ast.value
+        
     def sh_atom(self, ast):
         value = ast.value
         if value == 't':
@@ -109,9 +129,9 @@ class WalkRkt(Walk):
             # the balance of implementation difficulty vs additional
             # work for users vs consistency and predictability
             return LangLine('sigh-reader-is-broken-for-this')
-        elif value == 'rx':
+        elif value in ('rx'):
             return Sharp(ast)  # FIXME TODO broken at the parse level
-        elif value == 'rx#':
+        elif value == 'rx#':  # FIXME bytestring
             # TODO in theory we could have these parse the way feature
             # expressions do so that when they terminate they don't
             # transition back to the top but instead to the OM NOM NOM
@@ -120,9 +140,24 @@ class WalkRkt(Walk):
             # tell because racket always generats an error if these are
             # present alone this is true for #hash as well
             return Sharp(ast)  # FIXME TODO broken at the parse level
+        elif value in ('px'):  # has different syntax perl maybe?
+            return Sharp(ast)  # FIXME TODO broken at the parse level
+        elif value == 'px#':  # FIXME bytestring
+            return Sharp(ast)  # FIXME TODO broken at the parse level
         elif value.startswith('%'):
             # e.g. #%kernel
             return Identifier('#' + value)
+        elif value.startswith('&'):
+            return Box(value)
+        elif value[0] in 'xdb':  # XXX warning risk of the empty atom
+            return Number(ast)
+        elif value == 's':
+            return Struct(value)
+        elif value.startswith('hash'): # FIXME FIXME
+            return Dict(value)
+        elif value.startswith('<<'):  # FIXME very broken
+            return Sharp(ast)  # FIXME TODO broken at the parse level
+
         #elif value in ('',):
 
             # XXX incidentally the writing below is wrong, and the
@@ -142,9 +177,12 @@ class WalkRkt(Walk):
 
             #raise SyntaxError(f'Bad syntax {ast}')
         else:
-            raise NotImplementedError(f'No transformer for {ast}')
+            raise NotImplementedError(f'No dispatch transformer for {ast}')
 
     def sh_keyw (self, ast): return ast
+    def sh_estr (self, ast):
+        # TODO bytestring
+        return ast
     def _sh_lst (self, ast): return Vector.from_ast(ast)
     def sh_lstp (self, ast): return self._sh_lst(ast)
     def sh_lsts (self, ast): return self._sh_lst(ast)
@@ -338,7 +376,9 @@ class WalkEl(Walk):
                     if regular_char:
                         nv = collect[0]
                     else:
-                        return CharEl(collect)
+                        wlk = CharEl(collect)
+                        self._loc(wlk, ast)
+                        return wlk
 
             elif isinstance(v0, str):
                 vrest = ''.join(rest)  # FIXME TODO fails here -> syntax error
@@ -352,7 +392,9 @@ class WalkEl(Walk):
                     try:
                         nv = chr(i)
                     except ValueError:
-                        return CharEl(None, elc_int=i)
+                        wlk = CharEl(None, elc_int=i)
+                        self._loc(wlk, ast)
+                        return wlk
 
                 if v0 == 'u' and len(vrest) == 4:
                     # ?\uffff is max and fixed width
@@ -386,7 +428,9 @@ class WalkEl(Walk):
             # isn't a real char spec
             raise SyntaxError(f'wat char spec {ast}')
             
-        return Char(nv)
+        wlk = Char(nv)
+        self._loc(wlk, ast)
+        return wlk
 
         #return ast.value(lambda v:v, self._compute_escape_value)
 

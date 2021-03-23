@@ -110,15 +110,17 @@ class _m:
 class Ast:
 
     def __repr__(self, **kwargs):
+        pb, pe = self._point_beg, self._point_end
+        pts = f' ::{pb}:{pe}' if debug else ''
         if hasattr(self, 'value') and type(self.value) != type(self.__repr__):
             if isinstance(self.value, String):
-                return f'<{self.__class__.__name__[:2]} {self.value!r}>'
+                return f'<{self.__class__.__name__[:2]} {self.value!r}{pts}>'
             else:
-                return f'<{self.__class__.__name__[:2]} {self.value}>'
+                return f'<{self.__class__.__name__[:2]} {self.value}{pts}>'
         if hasattr(self, '_value'):
-            return f'<{self.__class__.__name__[:2]} {self._value}>'
+            return f'<{self.__class__.__name__[:2]} {self._value}{pts}>'
         elif hasattr(self, 'collect'):
-            return f'<{self.__class__.__name__[:3]} {self.collect!r}>'
+            return f'<{self.__class__.__name__[:3]} {self.collect!r}{pts}>'
         else:
             #self.__class__.__repr__ = lambda s: 'debug'
             #breakpoint()
@@ -518,7 +520,12 @@ class Number(AtomsChildren):
 
 class LangLine(PhaseTwoThing):
     """ the racket lang line #lang """
-    # XXX This is comment-like or WrapsUnti
+    # XXX This is comment-like or WrapsUnti this and HereDoc could
+    # work by shifting the state to be sensitive until the next
+    # newline, but otherwise the same, the problem is that you can't
+    # eastily use a phased approach because you won't ever be able
+    # to turn off the process of reading whole lines, a bit clearer
+    # how one might push arbitrary values to the PDA stack to do this
     __eq__ = _m.eq_value
     def __init__(self, value): self.value = value
 
@@ -632,6 +639,21 @@ class ByteCode(LLike):
     """ elisp can read bytecode literals """
 
     o, c = '#[', ']'
+
+
+class Struct(LLike):
+    """ literal for abstract data type container thing """
+    # the old slots vs keys thing, but we're over that
+
+    o, c = '(struct', ')'   # XXX TODO
+
+class Box(DataType):
+    """ indirection wrapper """
+
+    o, c = '(box', ')'   # XXX TODO
+
+    __eq__ = _m.eq_value
+    def __init__(self, value): self.value = value
 
 
 def plist_to_dict(plist):
@@ -870,8 +892,9 @@ class Walk:
 
     _recurse_funs = (
         (ListAbstract, '_labst'),
-        (Sharp, '_sharp'),  # process this up here
-        (IQuote, '_iquote'),
+        (Sharp, '_sharp'),  # process this up here FIXME Dispatch has to be implemented as a macro function
+        (Quote, '_quote'),  # racket allows unquote in quote
+        (IQuote, '_quote'),
         (WrapsNext, '_wraps_next'),  # lol I actually had it implemented already
         )
 
@@ -896,7 +919,8 @@ class Walk:
         (SUQuote, 'suquote'),
     )
 
-    _iq_funs = (
+    _unquote_family = 'uquote', 'suquote'
+    _q_funs = (  # quote like functions, update if there are others
         (UQuote, '_uq_any'),
         (SUQuote, '_uq_any'),
     )
@@ -920,23 +944,34 @@ class Walk:
     )
 
     def __init__(self, casters=None):
-        self._uquote, self._suquote = self.uquote, self.suquote
+        prev_rf = tuple(self._recurse_funs)
+        restore = [(fname, getattr(self, fname)) for fname in self._unquote_family]
+        self._restore_stack = [(prev_rf, restore)]
+        #self._uquote, self._suquote = self.uquote, self.suquote
 
     def __call__(self, ast, recurse=True):
 
+        wlk = ast
         if recurse:
             for cls, attr in self._recurse_funs:
                 if isinstance(ast, cls):
                     # have to use getattr so that we can dynamically
                     # reassing the function names for nested values
                     fun = getattr(self, attr)
-                    ast = fun(ast)
+                    wlk = fun(ast)
+                    if wlk != ast:
+                        self._loc(wlk, ast)
                     break  # duh
 
         for cls, attr in self._type_funs:
             if isinstance(ast, cls):
                 fun = getattr(self, attr)
-                return fun(ast)
+                wlk = fun(ast)
+                if wlk is None:
+                    breakpoint()
+                elif wlk != ast:
+                    self._loc(wlk, ast)
+                return wlk
 
         # TODO do we caste here or do we walk again?
         # yes we could do this all in a single pass
@@ -946,23 +981,31 @@ class Walk:
         # we want it to go faster we can figure out
         # how to write the transform using this saner
         # version as a reference
-        return ast
+        return wlk
 
     @staticmethod
     def _skip(ast):
         return [c for c in (Comment, XComment, BComment)
                 if isinstance(ast, c)]
 
+    @staticmethod
+    def _loc(wlk, ast):
+        if not hasattr(ast, '_point_beg'):
+            breakpoint()
+        wlk._point_beg = ast._point_beg
+        wlk._point_end = ast._point_end
+        return wlk
+
     def _labst(self, ast):
         recollect = [self(_) for _ in ast.collect
                      if not self._skip(_)]
-        return ast.__class__(recollect)
+        return self._loc(ast.__class__(recollect), ast)
 
-    def _wraps_next(walk, ast):
+    def _wraps_next(walk, ast):  # just to confuse you, walk is indeed self
         if debug:
             print('wn:', ast)
         revalue = walk(ast.value)
-        return ast.__class__(revalue)
+        return walk._loc(ast.__class__(revalue), ast)
 
     def _sharp(self, ast):
         # FIXME TODO do we run the first pass descent here or not? 
@@ -987,6 +1030,7 @@ class Walk:
             if isinstance(value, cls):
                 fun = getattr(self, attr)
                 ast = fun(value)
+                self._loc(ast, value)
                 if isinstance(ast, Sharp):  # prevent infinite recursion
                     return ast
                 else:
@@ -1000,29 +1044,66 @@ class Walk:
 
         return walk(ast)
 
-    def _iquote(self, ast):
+    def _quote(self, ast):
         # fake dynamic variables, non-threadsafe 
+        #prev_rf, prev_uq, prev_suq = tuple(self._recurse_funs), self.uquote, self.suquote
+        prev_rf = tuple(self._recurse_funs)
+        restore = [(fname, getattr(self, fname)) for fname in self._unquote_family]
         try:
             # can't += because wraps next will match before these
-            self._recurse_funs = self._iq_funs + self._recurse_funs
+            self._restore_stack.append((prev_rf, restore))
+            self._recurse_funs = self._q_funs + prev_rf
+            #self.uquote, self.suquote = self.q_uqot, self.q_sunq
+            # FIXME need to match function to type
+            #if 'susyntax' in self._unquote_family:# and isinstance(ast, ISyntax):
+                #breakpoint()
+            [setattr(self, fname, self._unquote_family_in_quote)
+             for fname in self._unquote_family]
+            if debug: print('enter quot')
+            return self._wraps_next(ast)
+        finally:
+            self._recurse_funs = prev_rf
+            [setattr(self, *fnf) for fnf in restore]
+            self._restore_stack.pop()
+            if debug: print('leave quot')
+
+    def _unquote_family_in_quote(self, ast): return ast
+
+    def _iquote(self, ast):
+        # fake dynamic variables, non-threadsafe 
+        prev_rf, prev_uq, prev_suq = tuple(self._recurse_funs), self.uquote, self.suquote
+        try:
+            # can't += because wraps next will match before these
+            self._recurse_funs = self._q_funs + self._recurse_funs
             self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
             if debug: print('enter iqot')
             return self._wraps_next(ast)
         finally:
-            self._recurse_funs = self.__class__._recurse_funs
-            self.uquote, self.suquote = self._uquote, self._suquote
+            self._recurse_funs = prev_rf
+            self.uquote, self.suquote = prev_uq, prev_suq
             if debug: print('leave iqot')
 
     def _uq_any(self, ast):
         # fake dynamic variables, non-threadsafe 
+        # FIXME shouldn't apply this the quote case?
+        # FIXME needs stack access I think?
+        #prev_rf, prev_uq, prev_suq = tuple(self._recurse_funs), self.uquote, self.suquote
+        c_prev_rf = tuple(self._recurse_funs)
+        c_restore = [(fname, getattr(self, fname)) for fname in self._unquote_family]
+        prev_rf, restore = self._restore_stack[-1]  # FIXME still not quite right I think?
         try:
-            self._recurse_funs = self.__class__._recurse_funs
-            self.uquote, self.suquote = self._uquote, self._suquote
+            self._restore_stack.append((c_prev_rf, c_restore))
+            self._recurse_funs = prev_rf
+            [setattr(self, *fnf) for fnf in restore]
+            #self.uquote, self.suquote = self._uquote, self._suquote
             if debug: print('enter uqot')
             return self._wraps_next(ast)
         finally:
-            self._recurse_funs = self._iq_funs + self._recurse_funs
-            self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
+            self._recurse_funs = c_prev_rf
+            [setattr(self, *fnf) for fnf in c_restore]
+            self._restore_stack.pop()
+            #self._recurse_funs = self._q_funs + self._recurse_funs
+            #self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
             if debug: print('leave uqot')
 
     # override these per dialect
@@ -1038,7 +1119,10 @@ class Walk:
     def iquote    (self, ast): return ast
     def iq_uqot   (self, ast): return ast
     def iq_sunq   (self, ast): return ast
-    def uquote    (self, ast): raise SyntaxError('unquote not in quasiquote')
+    def uquote    (self, ast): raise SyntaxError('unquote not in quasiquote or quote')
+    # FIXME racket allows unquote in quote
+    def q_uqot    (self, ast): return ast
+    def q_sunq    (self, ast): return ast
     def suquote   (self, ast): raise SyntaxError('unquote splicing not in quasiquote')
     def listp     (self, ast): return List.from_ast(ast)  # pretty much everyone does this
     def lists     (self, ast): return ast
@@ -1269,8 +1353,13 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
         return val
 
 
-    def process_collect(collect_stack, state):
-        return caste(state, collect_stack.pop())
+    def process_collect(collect_stack, state, point_beg=None, point_end=None):
+        thing = caste(state, collect_stack.pop())
+        thing._point_beg = point_beg
+        thing._point_end = point_end
+        #print(thing, point_beg, point_end,
+              #thing._point_beg, thing._point_end)
+        return thing
         # XXXXXXXXXXX unused below
         thing = collect_stack.pop()
         if collect is not None:
@@ -1352,9 +1441,9 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
             stack[::-1].index(s_unquote) > stack[::-1].index(s_quasiq))
 
 
-    def resolve_pops(collect_stack, collect, stack, char):
+    def resolve_pops(collect_stack, collect, stack, char, point_beg=None, point_end=None):
         state = stack[-1]
-        *cut, = i_resolve_pops(collect_stack, stack, char)
+        *cut, = i_resolve_pops(collect_stack, stack, char, point_beg, point_end)
 
         if state == s_char_first:  # FIXME using this to prevent issues with strings sigh
             collect = None
@@ -1377,20 +1466,20 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
         return (collect, *cut)
 
 
-    def i_resolve_pops(collect_stack, stack, char):
+    def i_resolve_pops(collect_stack, stack, char, point_beg=None, point_end=None):
         if debug:
             print(f'RS: {char if isinstance(char, str) else not_str[char]} {stack}')
             print(f'CO: {collect_stack}')
             pass
         state_prev = stack.pop()  # pop ^
         if (state_prev in (s_pi_in_cblk,)):  # transition only no collect
-            return i_resolve_pops(collect_stack, stack, char)
+            return i_resolve_pops(collect_stack, stack, char, point_beg, point_end)
 
         # FIXME #\;a causes isses for a bunch of readers which
         # this behavior avoids, but requires a special case
         #if state_prev == m and char == sc:
 
-        cut = process_collect(collect_stack, state_prev)  # cut /
+        cut = process_collect(collect_stack, state_prev, point_beg, point_end)  # cut /
         state = stack[-1]
         ##print(f'resp: {state_prev} {state} {cut!r}')
 
@@ -1406,7 +1495,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
             if (state != bos or #and state_prev in (c, m, a) or
                 state_prev == s_char_first):
                 collect_stack[-1].append(cut)
-                return i_resolve_pops(collect_stack, stack, char)
+                return i_resolve_pops(collect_stack, stack, char, point_beg, point_end)
 
             return cut,
 
@@ -1430,13 +1519,13 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                 nonlocal _in_quasi
                 _in_quasi = in_quasi(stack)  # FIXME SIGH EVIL SIGH
 
-            return i_resolve_pops(collect_stack, stack, char)
+            return i_resolve_pops(collect_stack, stack, char, point_beg, point_end)
         elif (char in (t_end_list_p, t_end_list_s, t_end_list_c) and
               state_prev in (*quotelikes, s_atom, s_keyw, s_char, s_char_first)):
             # multiple things end at the same time
             collect_stack[-1].append(cut)
             if state_prev != s_char_first:
-                return i_resolve_pops(collect_stack, stack, char)
+                return i_resolve_pops(collect_stack, stack, char, point_beg, point_end)
             else:
                 return tuple()
         elif state in listlikes:
@@ -1499,9 +1588,10 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
         # FIXME also need a point stack at which point it is
         # likely better to switch to having a combined stack
         # for state, collect, and point
+        last_line_point = 0  # to calculate column
 
         def mgen():
-            nonlocal line
+            nonlocal line, last_line_point
             # We use a generator function here so that if the
             # generator is passed to a dispatch macro form all the
             # book keeping machinery stays in sync.
@@ -1509,8 +1599,10 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                 yield point, char
                 if char == t_newline:
                     line += 1
+                    last_line_point = point
 
         point = 0
+        point_start_stack = [point]
         gen = mgen()
         in_quasi
         nonlocal _in_quasi
@@ -1555,9 +1647,13 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                     if state == s_esc_str:
                         #char = caste(state, char)  # TODO make homogenous
                         char = SEscape(char)
+                        char._point_beg = point
+                        char._point_end = point
                         #breakpoint()
                     else:
                         char = Escape(char)
+                        char._point_beg = point
+                        char._point_end = point
                 elif t_to_char == '?' and state in (s_char_first, s_char) and char == t_to_esc:  # FIXME HACK for elisp
                     stack.append(s_esc_str)  # NOTE elisp uses the same escape sequences for chars and strings
                     continue
@@ -1602,7 +1698,8 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                         stack.append(s_char)
 
                     if char_auto_end and char in m_ends:
-                        *thing, = i_resolve_pops(collect_stack, stack, char)
+                        point_beg = point_start_stack.pop()  # FIXME may need to pop more times depending on how many things end at the same time XXX probably by passing the point stack
+                        *thing, = i_resolve_pops(collect_stack, stack, char, point_beg, point)
                         collect = None
                         yield from thing
                         # FIXME not sure if correct
@@ -1611,6 +1708,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                             point_start = None
                         if collect is not None:
                             point_start = point
+                        point_start_stack.append(point)
                         continue
                     else:
                         continue   # FIXME ... not sure if this is right well it sorta works
@@ -1669,6 +1767,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
 
                         if point_start is None:
                             point_start = point
+                            point_start_stack.append(point)
 
                         if state == s_keyw:  # don't collect the colon that starts the keyword
                             continue
@@ -1700,7 +1799,8 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                       state == s_string     and char == t_beg_end_str or
                       state in (s_comm, s_comment_h) and char == t_newline or
                       state == s_pi_in_cblk and char == t_to_sharp):
-                    collect, *thing = resolve_pops(collect_stack, collect, stack, char)
+                    point_beg = point_start_stack.pop()
+                    collect, *thing = resolve_pops(collect_stack, collect, stack, char, point_beg, point)
                     yield from thing
                     # FIXME not sure if correct
                     if thing:
@@ -1708,6 +1808,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                         point_start = None
                     if collect is not None:
                         point_start = point
+                    point_start_stack.append(point)
 
                 elif char == t_beg_end_aver:  # FIXME bad implementation should not need this special case
                     # pi and ha are cases where we might or might not want/need to updated collect
@@ -1726,6 +1827,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                                 stack.append(s_atom_verbatim)
                         if point_start is None:
                             point_start = point
+                            point_start_stack.append(point)
 
                 elif state == s_cblk and char == t_to_sharp:
                     push_state_from_char(collect_stack, collect, stack, char)
@@ -1739,11 +1841,13 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                     collect = push_state_from_char(collect_stack, collect, stack, char)
                     if point_start is None:
                         point_start = point
+                        point_start_stack.append(point)
                 else:
                     raise Exception("I can't believe you've done this")
 
             if collect_stack:  # EOF case
-                collect, *thing = resolve_pops(collect_stack, collect, stack, eof)
+                point_beg = point_start_stack.pop()
+                collect, *thing = resolve_pops(collect_stack, collect, stack, eof, point_beg, point)
                 yield from thing
                 if stack and stack != [bos]:
                     # handle this special case out here to avoid
