@@ -177,7 +177,9 @@ class WalkRkt(Walk):
 
             #raise SyntaxError(f'Bad syntax {ast}')
         else:
-            raise NotImplementedError(f'No dispatch transformer for {ast}')
+            # TODO #-1 #1 #2
+            # TODO arbitrary multidispatch key-5
+            raise DispatchNotImplementedError(f'No dispatch transformer for {ast}')
 
     def sh_keyw (self, ast): return ast
     def sh_estr (self, ast):

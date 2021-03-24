@@ -1,0 +1,22 @@
+#lang racket/base
+a
+1
+-1
+#x1
++inf.0
+""
+|a b c|
+|lol \d \d|
+(list)
+'b
+'1
+"hello \x1a"
+'()
+'((((()))))
+'(() () ((())))
+'(a (b) ("c") #:key (("d"(1 2 ""))))
+#:key
+#:a-b
+#:a-b-d
+a\b\c
+(* 1 2)

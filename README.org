@@ -34,7 +34,7 @@ be used as a configuration language may be added in the future.
 #+begin_src bash
 git clone https://github.com/tgbugs/sxpyr.git
 pushd sxpyr
-pip install --user -e .
+pip install --user -e .[cli]
 python -m sxpyr.cli parse test/data/nested-splicing-unsyntax.rkt test/data/plist-test.sxpr
 popd
 #+end_src
@@ -57,3 +57,23 @@ For now you will also need the following installed on your system.
 - app-xemacs/xemacs-packages-all
 - guile
 - gambit
+* Fuzzing
+You will need a copy of afl.
+#+begin_src bash
+pip install --user -e .[fuzz]
+pushd test
+mkdir initial-inputs
+cp data/plist-test.sxpr initial-inputs/  # other seed files can be added as well
+py-afl-fuzz -m 400 -i initial-inputs/ -o fuzzing-results/ -- python -m sxpyr.cli parse --fuzz
+#+end_src
+
+#+begin_src bash
+python -m sxpyr.cli parse test/fuzzing-results/crashes/*
+#+end_src
+
+Note that initial inputs cannot be symlinks becuase afl creates hardlinks to the input files.
+
+Also note that afl seems to die after 175k execs?
+
+Sometimes it also seems that some errors are escaping the except block
+and making it be classified as crashes?

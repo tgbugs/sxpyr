@@ -16,6 +16,7 @@ with open('README.org', 'rt') as f:
     long_description = f.read()
 
 cli_requires = ['pyontutils']  # FIXME should be orthauth but haven't moved clifun yet
+fuzz_requires = ['python-afl'] + cli_requires
 tests_require = ['pytest'] + cli_requires
                  
 setup(name='sxpyr',
@@ -43,6 +44,7 @@ setup(name='sxpyr',
       tests_require=tests_require,
       extras_require={'test': tests_require,
                       'cli': cli_requires,
+                      'fuzz': fuzz_requires,
                      },
       scripts=[],
      )

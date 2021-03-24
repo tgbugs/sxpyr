@@ -1,9 +1,10 @@
 """ sxpyr parse lisp
 
 Usage:
-    sxpyr parse [options] <path>...
+    sxpyr parse [options] [<path>...]
 
 Options:
+    --fuzz
     -d --debug
 """
 
@@ -20,10 +21,9 @@ from sxpyr import (conf_sxpyr,
                    conf_hy)
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
-from sxpyr.sxpyr import make_do_path
+from sxpyr.sxpyr import make_do_path, DispatchNotImplementedError
 from sxpyr.sxpyr import conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast
 from sxpyr import *
-
 
 
 parse_common = configure()
@@ -42,11 +42,23 @@ read_rkt = conf_read(parse_rkt, WalkRkt)
 read_el = conf_read(parse_el, WalkEl)
 
 
+def readFromStdIn(stdin=None):
+    from select import select
+    if stdin is None:
+        from sys import stdin
+    if select([stdin], [], [], 0.0)[0]:
+        return stdin
+
+
 class Options(clif.Options):
 
     @property
     def path(self):
         return [pathlib.Path(path).expanduser() for path in self._args['<path>']]
+
+    #@property
+    #def stdin(self):
+        #return self._args['-']
 
 
 class Main(clif.Dispatcher):
@@ -57,6 +69,7 @@ class Main(clif.Dispatcher):
     def parse(self):
         # TODO guess dialect
         sxpyrmod.debug = self.options.debug  # FIXME sigh naming imports etc
+
         parse = parse_rkt  # FIXME
         walk = WalkRkt()
         read = read_rkt  # FIXME
@@ -70,13 +83,19 @@ class Main(clif.Dispatcher):
                     transformed = walk(expression)
                     yield transformed
 
+        if not self.options.path:
+            stdin = readFromStdIn()
+            source_gen = stdin,
+        else:
+            source_gen = self.options.path
+
         parse_path = make_do_path(parse)
         read_path = make_do_path(read)
 
         asts, wlks = [], []
         ast_fail, wlk_fail = [], []
         bad_walk  = []
-        for path in self.options.path:
+        for path in source_gen:
             try:
                 ast_generator = parse_path(path)
                 ast = list(ast_generator)
@@ -86,17 +105,15 @@ class Main(clif.Dispatcher):
                 wlk = list(wlk_generator)
                 wlks.append(wlk)
                 repr(wlk)
-            except AttributeError:
-                breakpoint()
-                raise
-            except SyntaxError as e:
+            except (SyntaxError,
+                    DispatchNotImplementedError,
+                    UnicodeDecodeError) as e:
                 if len(asts) > len(wlks):
                     bad_walk.append(asts.pop())
                     wlk_fail.append((path, e))
                 else:
                     ast_fail.append((path, e))
                 
-
         #print(asts)
         print(wlks)
         print(bad_walk)
@@ -115,7 +132,18 @@ def main():
     if main.options.debug:
         print(main.options)
 
-    out = main()
+    if options.fuzz:
+        import os
+        import sys
+        import afl
+        #afl.init()
+        while afl.loop(55555):
+            out = main()
+            #sys.stdin.seek(0)
+
+        os._exit(0)
+    else:
+        out = main()
 
 
 if __name__ == '__main__':

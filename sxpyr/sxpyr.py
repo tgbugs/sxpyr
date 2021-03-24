@@ -10,11 +10,17 @@
 
 __version__ = '0.0.1'
 
+from io import TextIOWrapper
 from ast import literal_eval
 from json import dumps
 from types import GeneratorType
 
 debug = False
+
+
+class SxpyrError(Exception): pass
+class UnknownStateError(SxpyrError): pass
+class DispatchNotImplementedError(SxpyrError): pass
 
 
 def python_to_sxpr(blob):
@@ -37,14 +43,24 @@ def make_do_path(do, chunksize=4096):
     """ along the way to load """
     #parse = configure(**kwargs)  # FIXME pass in parse
     #read = conf_read(parse, mawp)  # FIXME
-    def do_path(path):
-        def path_gen():
-            with open(path, 'rt') as f:
+    def do_path(path_or_fd):
+        if isinstance(path_or_fd, TextIOWrapper):  # stdin probably
+            def path_gen():
+                f = path_or_fd
                 while True:
                     data = f.read(chunksize)
                     if not data:
                         break
                     yield from data
+        else:
+            def path_gen():
+                path = path_or_fd
+                with open(path, 'rt') as f:
+                    while True:
+                        data = f.read(chunksize)
+                        if not data:
+                            break
+                        yield from data
 
         return do(path_gen())
 
@@ -1347,7 +1363,7 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
                 if [_ for _ in collect if isinstance(_, SEscape)] else
                 CharSpec(collect))
         # XXX if you hit this error with bos at eof DO NOT ADD bos here!
-        else: raise NotImplementedError(f'Unknown state: {state} {collect}')
+        else: raise UnknownStateError(f'Unknown state: {state} {collect}')
         # bind start and end points here for simplicity
         # val.start, val.end = start, end
         return val
@@ -1860,7 +1876,10 @@ def configure(allow_in_symbol=tuple(),  # True, False, SyntaxError maybe dict fo
             ps = point_start + 1 if point_start is not None else 0
             pe = point + 1 if point is not None else 0
             msg = f'error start {ps} end {pe} line {line}'
-            raise err.__class__(msg) from err
+            if isinstance(err, UnicodeDecodeError):
+                raise err  # position is already marked
+            else:
+                raise err.__class__(msg) from err
 
 
     return parse

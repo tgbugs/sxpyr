@@ -979,25 +979,28 @@ def test_fails_read():
 
 
 def test_fails_parse():
-    bads = ("(defun fail (parse)",
-            '"I am an unterminated string',
-            'unmatched ) right paren',
-            'unmatched ] right bracket',
-            "{",
-            "}",
-            '"',
-            "'",  # need a proper error
-            "' ; oops",  # should fail but is not
-            "[)",
-            "(]",
-            "'(1(2)')",  # confusing error message
-            "|a| b|",
-            '#| #| |#',
-            '(;hrm',  # comment state could mask unterminated list
-            '(#;',
-            '(#||#',
-            '#;',
-            '#\\',  # note #\ unterminated char in racket
+    bads = (
+        '#\x1a',
+        ',',
+        "(defun fail (parse)",
+        '"I am an unterminated string',
+        'unmatched ) right paren',
+        'unmatched ] right bracket',
+        "{",
+        "}",
+        '"',
+        "'",  # need a proper error
+        "' ; oops",  # should fail but is not
+        "[)",
+        "(]",
+        "'(1(2)')",  # confusing error message
+        "|a| b|",
+        '#| #| |#',
+        '(;hrm',  # comment state could mask unterminated list
+        '(#;',
+        '(#||#',
+        '#;',
+        '#\\',  # note #\ unterminated char in racket
             )
     run_fails(parse_rkt, bads)
 
