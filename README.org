@@ -51,6 +51,7 @@ In order to run the tests you will need the following repos.
 - tawny-owl
 - hy
 - Fennel
+- txr
 
 For now you will also need the following installed on your system.
 - xemacs

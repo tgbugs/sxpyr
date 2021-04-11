@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 from sxpyr import (conf_sxpyr,
@@ -7,7 +8,8 @@ from sxpyr import (conf_sxpyr,
                    conf_rkt,
                    conf_gui,
                    conf_clj,
-                   conf_hy)
+                   conf_hy,
+                   conf_txr,)
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
 from sxpyr.sxpyr import conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast
@@ -28,6 +30,7 @@ parse_rkt = configure(**conf_rkt)
 parse_gui = configure(**conf_gui)
 parse_clj = configure(**conf_clj)
 parse_hy = configure(**conf_hy)
+parse_txr = configure(**conf_txr)
 
 
 def sprint(gen, match=None, fail=False):
@@ -233,7 +236,7 @@ after
     # runnin (read "(list 1 , 2 , 3)") in gemacs well the explains a lot
 
     sprint(parse_xel("`(a ,b)"))
-    sprint(parse_xel("`(a\,b)"))
+    sprint(parse_xel(r"`(a\,b)"))
     sprint(parse_xel("`(a ,(b `(c ,d)))"))
     sprint(parse_xel("`(1 ,(a,b `(3 ,c,d)))"))
 
@@ -299,7 +302,7 @@ after
     sprint(parse_rkt(":|d / e|"))
     sprint(parse_rkt("|:f / g|"))
 
-    sprint(parse_rkt('#| #\; |#'))
+    sprint(parse_rkt(r'#| #\; |#'))
 
     sprint(parse_rkt('#\\" lol'), match=[CharSpec('"'), Atom('lol')])
     sprint(parse_rkt('(#\\))'))
@@ -398,8 +401,8 @@ after
     sprint(parse_clj(r'(list \a\b\c)'))
     # FIXME ?asdf and \asdf both cause read errors
 
-    sprint(parse_rkt('(modify-syntax-entry ?\{  "(}1nb" table)'))
-    sprint(parse_el('(modify-syntax-entry ?\{  "(}1nb" table)'))
+    sprint(parse_rkt(r'(modify-syntax-entry ?\{  "(}1nb" table)'))
+    sprint(parse_el(r'(modify-syntax-entry ?\{  "(}1nb" table)'))
     sprint(parse_el("?a?b?c"))
     sprint(parse_el("(list ?a?b?c)"))
     sprint(parse_el("""?
@@ -473,7 +476,7 @@ r""";\
               x)))
     ((45) 123)))
 """))
-    sprint(parse_rkt('#\['))
+    sprint(parse_rkt(r'#\['))
     sprint(parse_rkt('#| | |#'))
 
     sprint(parse_rkt(r'"\\"'))
@@ -758,6 +761,9 @@ def test_parse_paths():
         #)
         #_sigh = (
 
+        # txr
+        *(git_nofork_path / 'txr').rglob('*.tl'),
+
         # fennel
         *(git_nofork_path / 'Fennel').rglob('*.fnl'),
 
@@ -871,7 +877,12 @@ def test_parse_paths():
         'hy_repr.hy',  # #[string] issues
 
         # fennel
-        *(_.name for _ in (git_nofork_path / 'Fennel/test/bad/').rglob('*.fnl'))
+        *(_.name for _ in (git_nofork_path / 'Fennel/test/bad/').rglob('*.fnl')),
+
+        # txr
+        'ffi-misc.tl',  # #b'string' issues?
+        'split.tl', # #/regex/ issues?
+        'termios.tl',  # `str\ning` issues
     )
     fail = True
     for count, p in enumerate(paths):
@@ -891,13 +902,22 @@ def test_parse_paths():
                 continue
 
             try:
-                res = sprint(parse_rkt(hrm))
+                if p.suffix == '.tl':
+                    tres = sprint(parse_txr(hrm))
+
+                res = sprint(parse_rkt(hrm))  # racket reader compatible syntax
                 print('success:', p)
                 #val = list(parse_rkt(hrm))
             except Exception as err:
                 try:
                     if p.name in should_fail:
                         continue
+                    elif p.suffix == '.tl':
+                        if re.search(r'`(?!`).*`', hrm):
+                            print('txr fail: `string`')
+                            continue
+                        else:
+                            raise err
                     elif p.suffix == '.rkt':
                         if '#<<' in hrm:
                             print('racket fail: here string', p)

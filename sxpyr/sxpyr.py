@@ -891,6 +891,13 @@ conf_gui = {
     **toks_scheme,
 }
 
+conf_txr = {
+    **toks_common,
+    **toks_b_list_s,
+    't_to_quasi':       '^',
+    't_to_splc_in_unq': '*',
+}
+
 # union of all or as close as we can get
 
 conf_union = {

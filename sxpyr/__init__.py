@@ -48,4 +48,5 @@ from .sxpyr import (
     conf_rkt,
     conf_gui,
     conf_clj,
-    conf_hy)
+    conf_hy,
+    conf_txr,)
