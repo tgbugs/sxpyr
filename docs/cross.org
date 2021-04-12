@@ -1,0 +1,131 @@
+In search of a unified dialect.
+* Reader cross compatibility
+
+Types of failures. Loud, silent, etc. The silent semantics changing
+failures are the most problematic.
+
+# axes are reading and read
+#+caption: Portion of successful reads.
+| impl   | cl | el-gnu | el-xel | scm-cz | scm-ga | scm-gu | rkt | clj | clj-js | hy | fennel | txr |
+|--------+----+--------+--------+--------+--------+--------+-----+-----+--------+----+--------+-----|
+| cl     |  1 |        |        |        |        |        |     |     |        |    |        |     |
+| el-gnu |    |      1 |        |        |        |        |     |     |        |    |        |     |
+| el-xel |    |        |      1 |        |        |        |     |     |        |    |        |     |
+| scm-cz |    |        |        |      1 |        |        |     |     |        |    |        |     |
+| scm-ga |    |        |        |        |      1 |        |     |     |        |    |        |     |
+| scm-gu |    |        |        |        |        |      1 |     |     |        |    |        |     |
+| rkt    |    |        |        |        |        |        |   1 |     |        |    |        |     |
+| clj    |    |        |        |        |        |        |     |   1 |        |    |        |     |
+| clj-js |    |        |        |        |        |        |     |     |      1 |    |        |     |
+| hy     |    |        |        |        |        |        |     |     |        |  1 |        |     |
+| fennel |    |        |        |        |        |        |     |     |        |    |      1 |     |
+| txr    |    |        |        |        |        |        |     |     |        |    |        |   1 |
+* Reader implementations
+** cl
+#+begin_src lisp
+(defun read-cross (path)
+  ()
+)
+#+end_src
+** el
+** scm
+*** cz
+*** ga
+*** gu
+** rkt
+#+begin_src racket :lang racket/base
+(require racket/pretty)
+(define (read-path path)
+  (with-handlers ([exn:fail?
+                   (lambda (exn)
+                     #; ; TODO collect errors
+                     (println (format "err ~s" exn))
+                     #f)]
+                  #;
+                  [exn:fail:read? (lambda (exn)
+                                    (println (format "err ~s" exn))
+                                    #f)])
+    (with-input-from-file path
+      (λ ()
+        (let loop ([expr (read)])
+          (unless (eq? expr eof)
+            #;
+            (pretty-print expr)
+            (loop (read))))
+        #t))))
+; FIXME equivalent of recursive fine -name '*.lisp'
+(define results #f)
+
+;; from [[file:../../NOFORK/racket/racket/share/pkgs/r6rs-lib/r6rs/private/readtable.rkt]] 
+(define (read-expr ch port src line col pos)
+  (read port))
+
+(define (eat-next+ ch port src line col pos)
+  (let ([feature-expression (read port)])
+    (unless #t ; (process-feature-expr feature-expression)
+      (read port))))
+
+(define (eat-next- ch port src line col pos)
+  (let ([feature-expression (read port)])
+    (when #t ; (process-feature-expr feature-expression)
+      (read port))))
+
+(require r6rs/private/readtable)
+
+(define cl-readtable
+  (make-readtable
+   (current-readtable)
+   #\. 'dispatch-macro read-expr ; oh dear
+   #\- 'dispatch-macro eat-next-
+   #\+ 'dispatch-macro eat-next+))
+
+(define (dodir path)
+  (for/list ([f (directory-list path #:build? #t)])
+    (cons f (read-path f))))
+
+(set! results
+      (parameterize ([current-readtable cl-readtable])
+        (dodir "/home/tom/git/NOFORK/sbcl/src/code/")))
+
+(set! results
+      (parameterize ([current-readtable cl-readtable])
+        (dodir "/usr/share/maxima/5.44.0/src/numerical/slatec/")))
+
+(pretty-print results)
+
+(read-path "/home/tom/git/NOFORK/sbcl/src/code/fop.lisp")
+(read-path "/home/tom/git/NOFORK/sbcl/src/code/loop.lisp")
+#+end_src
+** clj
+** hy
+** fennel
+** txr
+* Cross testing
+Basic protocol.
+
+define files-written-in-read-dialect as the set of files that not only
+read successfully in a given dialect but also have the expected
+semantics for that dialect, which for lisps is nearly identical
+
+to produce files-written-in-read-dialect from read-implementation
+we did the following ... TODO code in the implementation repo
+
+given a set-of-all-implementations
+for each reading-implementation in the set-of-all-implementations
+    for each read-implementation in the set-of-all-implementations
+ ideally
+    for every files-written-in-read-dialect
+ but in reality
+    for each file in a sample from files-written-in-read-dialect
+        call the read procedure of reading-implementation on file 
+        and record whether reading succeeded or produced an error
+
+#+begin_src lisp
+;;(defparameter dialect-files-alist <<dialect-files-alist>>)
+(defun files-written-in-dialect (dialect) '())
+(defun get-impl-dialect (impl) 'dialect)
+(defun get-all-impls () '())
+(defun read-file (file)
+  (read)
+)
+#+end_src
