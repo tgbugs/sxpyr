@@ -23,10 +23,154 @@ failures are the most problematic.
 * Reader implementations
 ** cl
 #+begin_src lisp
+(ql:quickload :clacket)
+
+,#+()
 (defun read-cross (path)
   ()
 )
+
+(defvar *readtable-racket* (copy-readtable nil))
+
+,#+()
+(setf *readtable-racket* (copy-readtable nil))
+
+;; on ccl, ecl, and sbcl and probably all the rest this must be re-run
+;; if read.lisp is recompiled even if you redefine the function
+;; manually in the package the readtable seems to inline the functions
+(let ((*readtable* *readtable-racket*))
+  (clacket:enable-clacket))
+
+(defvar result nil)
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+        (clacket:read-rkt-file
+ ;; x: issues
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/thread/time.rkt"
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/schemify/struct-convert.rkt"
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/schemify/schemify.rkt"
+
+ ;;; resolved
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/worksp/csbuild.rkt" ; #""
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/worksp/make-icons.rkt" ; #e #i
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/thread/thread.rkt" ; #hasheq
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/io/demo.rkt" ; #:1
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/thread/place-message.rkt" ; #s(pre 1 2 3)
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/thread/atomic.rkt" ; #, unsyntax
+ ;;#p"/home/tom/git/NOFORK/racket/racket/src/io/print/bytes.rkt" ; #\vtab
+
+ ;;; unresolved
+ ;; #p"/home/tom/git/NOFORK/racket/racket/src/schemify/interp-match.rkt" ; #` and #,
+ ;; #P"/home/tom/git/NOFORK/racket/racket/share/pkgs/web-server-lib/web-server/formlets/unsafe/syntax.rkt" ; #%#
+ ;;#P"/home/tom/git/NOFORK/racket/racket/share/pkgs/typed-racket-test/optimizer/tests/vector-sum.rkt" ; here string
+ ;;#P"/home/tom/git/NOFORK/racket/racket/share/pkgs/r6rs-lib/rnrs/records/inspection-6.rkt" ; #!
+ ;;#P"/home/tom/git/NOFORK/racket/racket/src/bc/src/gen-jit-ts.rkt"
+ #P"/home/tom/git/NOFORK/racket/racket/collects/compiler/private/xform.rkt" ; can cons arg list ?
+
+    )))
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+        (clacket:read-rkt (make-string-input-stream "#lang at-exp lol"))))
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+        (clacket:read-rkt (make-string-input-stream "(struct #%#-mark (l))"))))
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+        (clacket:read-rkt (make-string-input-stream "#%#-mark "))))
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+        (clacket:read-rkt (make-string-input-stream "#%# "))))
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+       (list
+        (clacket:read-rkt (make-string-input-stream "#`lol"))
+        (clacket:read-rkt (make-string-input-stream "#`(lol)"))
+        (clacket:read-rkt (make-string-input-stream "`(lol ,a)")) ; works
+        (clacket:read-rkt (make-string-input-stream "`(lol #,b)")) ; fails if we set the stack
+        (clacket:read-rkt (make-string-input-stream "#`(lol ,c)")) ; works
+        (clacket:read-rkt (make-string-input-stream "#`(lol #,d)")) ; fails consistent w/ &aux blocking?
+        (clacket:read-rkt (make-string-input-stream "#`(lol ,e)")) ; should fail
+        )))
+
+(setf result
+      (let ((*readtable* *readtable-racket*))
+        ;; XXX sbcl stuck at parsing ... due to the reader losing its mind over dots in lists
+        ;; pretty sure this is actually a bug in sbcl for (set-macro-character #\. #'no-fun)
+        ;; ccl can correctly parse (a ... b) because it handles the illegal dot syntax
+        ;; after reading all the dots but then hits #px a few line later
+        ;; one way around this if you can modify code is to use '(a \. b) but that doesn't
+        ;; really help us here
+        (format t "rrtc: ~s~%" (readtable-case *readtable*))
+        (clacket:read-rkt-file #p"/home/tom/git/laundry/laundry/expander.rkt")))
+
+(+ 1
+   #;
+   (pw `(a: ,(b #'c)))
+   2
+   )
+
+(defun dodir (path)
+  (let ((*readtable* *readtable-racket*)
+        (*default-pathname-defaults* path)
+        (fail-|:|-count 0)
+        (fail-|,|-count 0)
+        (fail-|@|-count 0)
+        (fail-count 0) (fail-paths '())
+        (total 0))
+    (loop for f in (directory #p"./**/*.rkt")
+                                        ;for i from 1 ; somehow doesn't work with directory !?
+                                        ;when (> i 1)
+          ;; FIXME this is hitting all of NOFORK ??? due to missing a trailing / ?? yep!
+          do (progn
+               (setf total (+ 1 total))
+               ,#+()
+               (format t "reading ~s~%" f)
+               (restart-case ; OH MY GOD I FINALLY LEARNED HOW TO DO IT YAY
+                   (handler-bind
+                       ,#+ccl
+                     ((ccl::simple-reader-error (lambda (c) c
+                                                  ,#+()
+                                                  (format t "error was: ~s~%" c)
+                                                  (invoke-restart 'please-continue)))
+                                        ;,#+()
+                      (clacket::lat (lambda (c) (invoke-restart 'lat-continue)))
+                      (clacket::iss (lambda (c) (invoke-restart 'iss-continue)))
+                      (clacket::cnib (lambda (c) (invoke-restart 'cnib-continue)))
+                      (clacket::sigh (lambda (c) c #+()(format t "error was: ~s~%" c)
+                                             (invoke-restart 'please-continue c))))
+                     (clacket:read-rkt-file f))
+                 (lat-continue (&optional lol) ; don't report these there are too many
+                   (format t "spl@: ~s~%" f)
+                   (setf fail-|@|-count (+ 1 fail-|@|-count)) ; FIXME sum??
+                   (setf fail-paths (cons f fail-paths)))
+                 (cnib-continue (&optional lol) ; don't report these there are too many
+                   (setf fail-|,|-count (+ 1 fail-|,|-count)) ; FIXME sum??
+                   (setf fail-paths (cons f fail-paths)))
+                 (iss-continue (&optional lol) ; don't report these there are too many
+                   (setf fail-|:|-count (+ 1 fail-|:|-count)) ; FIXME sum??
+                   (setf fail-paths (cons f fail-paths)))
+                 (please-continue (&optional lol)
+                   ;;(format t "failure in: ~s ~s~%" f lol)
+                   (format t "failure in: ~s~%" f)
+                   (setf fail-count (+ 1 fail-count)) ; FIXME sum??
+                   (setf fail-paths (cons f fail-paths))
+                   (values))
+                 )))
+    (values (list fail-count fail-|:|-count fail-|,|-count fail-|@|-count total) fail-paths)))
+
+,#+() ; just seeing what happens
+(read (make-string-input-stream "#%#-mark"))
+
+(setf n-fails (dodir #p"~/git/NOFORK/racket/"))
+
 #+end_src
+# FIXME org babel gets stuck in an infinite popup loop trying to swtich to sbcl
 ** el
 ** scm
 *** cz
@@ -53,7 +197,7 @@ failures are the most problematic.
             (pretty-print expr)
             (loop (read))))
         #t))))
-; FIXME equivalent of recursive fine -name '*.lisp'
+; FIXME equivalent of recursive find -name '*.lisp'
 (define results #f)
 
 ;; from [[file:../../NOFORK/racket/racket/share/pkgs/r6rs-lib/r6rs/private/readtable.rkt]] 
