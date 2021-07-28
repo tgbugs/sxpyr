@@ -1,4 +1,4 @@
-#+title: A survey of lisp reader behavior
+#+title: A survey of Lisp family surface syntax
 #+author: Thomas H Gillespie
 #+email: tgbugs@gmail.com
 #+date: 2021-03-06
@@ -23,6 +23,7 @@
 
 # #+latex_header: \usepackage{dejavu}
 #+latex_header: \usepackage{DejaVuSansMono}
+#+latex_header: \usepackage[inkscapelatex=false]{svg}
 
 #+latex_header: \usepackage{fontspec}
 #+latex_header: \setmonofont[Scale=MatchLowercase]{DejaVu Sans Mono}
@@ -485,7 +486,7 @@ as tokenization and parsing.
 *** phases figure :ignore:
 # you will need to `org-babel-lob-ingest' developer-guide.org for this
 #+name: fig-reader-phases-gen
-#+header: :wrap "src dot :file ./images/reader-phases.png :cmdline -Kdot -Tpng :exports results :cache yes"
+#+header: :wrap "src dot :file ./images/reader-phases.svg :cmdline -Kdot -Tsvg :exports results :cache yes"
 #+begin_src racket :lang racket/base :exports none :noweb no-export :cache yes
 <<racket-graph-helper>>
 (define g (dag-notation
@@ -500,8 +501,8 @@ charachter-stream -> abstract-syntax-tree -> dialect-data-type-tree -> host-lang
 
 #+name: fig-reader-phases
 #+caption: Phases of parsing.
-#+RESULTS[81f3d3eac8ac6e3a3e1ddb0c535a1bc0b9072a97]: fig-reader-phases-gen
-#+begin_src dot :file ./images/reader-phases.png :cmdline -Kdot -Tpng :exports results :cache yes
+#+RESULTS[bfb1643eec681a84c94e2a8039fa80ca54a80956]: fig-reader-phases-gen
+#+begin_src dot :file ./images/reader-phases.svg :cmdline -Kdot -Tsvg :exports results :cache yes
 digraph G {
 	node0 [label="dialect-data-type-tree"];
 	node1 [label="abstract-syntax-tree"];
@@ -541,8 +542,9 @@ digraph G {
 
 #+name: fig-phases
 #+caption: Phases of parsing.
-#+RESULTS[39d0c140ffc39dfacff06f855511299eaae2d57e]: fig-reader-phases
-[[file:./images/reader-phases.png]]
+#+RESULTS[08a8ecb317707517dbc429b47769a77252d995d3]: fig-reader-phases
+[[file:./images/reader-phases.svg]]
+
 ** Pipelining
 Parsing, walking, and casting are currently applied sequentially to
 each top level form.
