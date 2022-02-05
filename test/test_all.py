@@ -12,7 +12,10 @@ from sxpyr import (conf_sxpyr,
                    conf_txr,)
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
-from sxpyr.sxpyr import conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast
+from sxpyr.sxpyr import (
+    conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast,
+    UnknownStateError, DispatchNotImplementedError)
+
 from sxpyr import *
 
 git_path = Path('~/git/').expanduser()
@@ -68,11 +71,12 @@ def test_read():
     rec_over = int(recursion_limit // 4)
     print('under over on stack', rec_under, rec_over)
     # close enough to the limit that certain other things like calling
-    # repr will hit the limit
+    # repr will hit the limit, however on versions of python newer than 3.6
+    # it seems that repr no longer has this behavior (strange)
     big = next(read_rkt(''.join([p * rec_under for p in ("(", ")")])))
     try:
         repr(big)
-        assert False, "should have blown the stack"
+        #assert False, "should have blown the stack"
     except RecursionError as e:
         pass
 
@@ -98,37 +102,37 @@ def test_read():
     sprint(read_rkt("#`(a #,b)"))
     sprint(read_rkt("#`(a #,@b)"))
 
-    sprint(read_rkt("#'(a #,b)"), fail=True)
-    sprint(read_rkt("#'(a #,@b)"), fail=True)
+    sprint(read_rkt("#'(a #,b)"))  # unq/s is allowed in quote or syntax
+    sprint(read_rkt("#'(a #,@b)"))
 
-    sprint(read_rkt("`(a #,b)"), fail=True)
-    sprint(read_rkt("`(a #,@b)"), fail=True)
+    sprint(read_rkt("`(a #,b)"))
+    sprint(read_rkt("`(a #,@b)"))
 
-    sprint(read_rkt("#`(a ,b)"), fail=True)
-    sprint(read_rkt("#`(a ,@b)"), fail=True)
+    sprint(read_rkt("#`(a ,b)"))
+    sprint(read_rkt("#`(a ,@b)"))
 
     sprint(read_rkt("`(a ,@(b))"))
     sprint(read_rkt("`(a ,@(b `(c ,(d))))"))
     sprint(read_rkt("`(a ,@(b `(c ,(d `(e ,@(f))))))"))
-    sprint(read_rkt("'(a ,@(b))"), fail=True)
+    sprint(read_rkt("'(a ,@(b))"))
     sprint(read_rkt("`(a ,@(b ,(c)))"), fail=True)
 
     sprint(read_rkt("`(a ,(b))"))
     sprint(read_rkt("`(a ,(b `(c ,(d))))"))
     sprint(read_rkt("`(a ,(b `(c ,(d `(e ,(f))))))"))
-    sprint(read_rkt("'(a ,(b))"), fail=True)
+    sprint(read_rkt("'(a ,(b))"))
     sprint(read_rkt("`(a ,(b ,(c)))"), fail=True)
 
     sprint(read_rkt("#`(a #,@(b))"))
     sprint(read_rkt("#`(a #,@(b #`(c #,(d))))"))
     sprint(read_rkt("#`(a #,@(b #`(c #,(d #`(e #,@(f))))))"))
-    sprint(read_rkt("#'(a #,@(b))"), fail=True)
+    sprint(read_rkt("#'(a #,@(b))"))
     sprint(read_rkt("#`(a #,@(b #,(c)))"), fail=True)
 
     sprint(read_rkt("#`(a #,(b))"))
     sprint(read_rkt("#`(a #,(b #`(c #,(d))))"))
     sprint(read_rkt("#`(a #,(b #`(c #,(d #`(e #,(f))))))"))
-    sprint(read_rkt("#'(a #,(b))"), fail=True)
+    sprint(read_rkt("#'(a #,(b))"))
     sprint(read_rkt("#`(a #,(b #,(c)))"), fail=True)
 
 
@@ -749,7 +753,7 @@ def test_parse_paths():
         #(git_nofork_path / 'racket/racket/src/cs/schemified/schemify.scm'),  # broken due to |#%name|
         #(git_nofork_path / 'racket/racket/src/schemify/wrap.rkt'),
         #(git_nofork_path / 'sbcl/tests/data/wonky3.lisp'),
-        (git_nofork_path / 'hy/tests/native_tests/contrib/hy_repr.hy'),  # broken due to #[strings]
+        (git_nofork_path / 'hy/tests/native_tests/hy_repr.hy'),  # broken due to #[strings]
 
         Path('/usr/lib/xemacs/xemacs-packages/lisp/edebug/edebug.el'),
         Path('/usr/lib/xemacs/xemacs-packages/lisp/tm/latex-math-symbol.el'),
@@ -875,6 +879,7 @@ def test_parse_paths():
 
         # hy
         'hy_repr.hy',  # #[string] issues
+        'compiler_error.hy',  # expected unterminated string
 
         # fennel
         *(_.name for _ in (git_nofork_path / 'Fennel/test/bad/').rglob('*.fnl')),
@@ -915,6 +920,9 @@ def test_parse_paths():
                     elif p.suffix == '.tl':
                         if re.search(r'`(?!`).*`', hrm):
                             print('txr fail: `string`')
+                            continue
+                        elif '#b' in hrm:
+                            print('txr fail: #b binary notation')
                             continue
                         else:
                             raise err
@@ -1031,6 +1039,8 @@ def run_fails(read_or_parse, bads):
         try:  # I WANT MACROS
             sprint(read_or_parse(bad))
             should_have_failed.append(bad)
+        except (UnknownStateError, DispatchNotImplementedError) as e:
+            print(f'task failed succssfully as {e!r} for {bad!r}')
         except SyntaxError as e:
             print(f'task failed succssfully for {bad!r}')
         except NotImplementedError as e:

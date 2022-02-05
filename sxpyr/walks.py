@@ -22,22 +22,16 @@ class WalkLazy(Walk):
 
 class WalkRkt(Walk):
 
-    #_recurse_funs = (
-        #(ISyntax, '_isyntax'),
-    #) + Walk._recurse_funs
-    _recurse_funs = Walk._recurse_funs
-
-    _q_funs = (
-        (USyntax, '_uq_any'),
-        (SUSyntax, '_uq_any'),
-    ) + Walk._q_funs
+    _recurse_funs = (
+        (Syntax, '_quote'),
+        (ISyntax, '_isyntax'),
+    ) + Walk._recurse_funs
 
     _unquote_family = ('usyntax', 'susyntax') + Walk._unquote_family
-
-    #_is_funs = (
-        #(USyntax, '_us_any'),
-        #(SUSyntax, '_us_any'),
-    #)  # FIXME add this to _iqfuns I think? they are all cross compatible XXX reduce duplication
+    _uqf_funs = (
+        (USyntax, '_uq_any'),
+        (SUSyntax, '_uq_any'),
+    ) + Walk._uqf_funs
 
     _type_funs = (
         (Syntax, 'syntax'),
@@ -56,32 +50,17 @@ class WalkRkt(Walk):
 
     def __init__(self):
         super().__init__()
-        #self._usyntax, self._susyntax = self.usyntax, self.susyntax
 
-    def __isyntax(self, ast):
-        # fake dynamic variables, non-threadsafe 
-        try:
-            # can't += because wraps next will match before these
-            self._recurse_funs = self._is_funs + self._recurse_funs
-            self.usyntax, self.susyntax = self.is_ustx, self.is_suns
-            if debug: print('enter istx')
-            return self._wraps_next(ast)
-        finally:
-            self._recurse_funs = self.__class__._recurse_funs
-            self.usyntax, self.susyntax = self._usyntax, self._susyntax
-            if debug: print('leave istx')
+    def _iq_overwrite(self):
+        super()._iq_overwrite()
+        self.usyntax, self.susyntax = self.iq_ustx, self.iq_suns
 
-    def __us_any(self, ast):
-        # fake dynamic variables, non-threadsafe 
-        try:
-            self._recurse_funs = self.__class__._recurse_funs
-            self.usyntax, self.susyntax = self._usyntax, self._susyntax
-            if debug: print('enter ustx')
-            return self._wraps_next(ast)
-        finally:
-            self._recurse_funs = self._is_funs + self._recurse_funs
-            self.usyntax, self.susyntax = self.is_ustx, self.is_suns
-            if debug: print('leave ustx')
+    def _is_overwrite(self):
+        self.uquote, self.suquote = self.is_uqot, self.is_sunq
+        self.usyntax, self.susyntax = self.is_ustx, self.is_suns
+
+    def _isyntax(self, ast):
+        return self._quote_family_wrapper(ast, self._is_overwrite)
 
     def atom(self, ast):
         # NOTE since we don't have a full implementation we can't
@@ -94,14 +73,19 @@ class WalkRkt(Walk):
 
     def syntax   (self, ast): return ast
     def isyntax  (self, ast): return ast
+
     def is_ustx  (self, ast): return ast
     def is_suns  (self, ast): return ast
+    def is_uqot  (self, ast): return ast
+    def is_sunq  (self, ast): return ast
+
+    def iq_ustx  (self, ast): return ast
+    def iq_suns  (self, ast): return ast
     # NOTE unlike common lisp, racket only raises an error if the un
     # forms are used at the top level, if they are used inside of a
     # quoted form it will not complain not sure whether that is
     # intentional or not
     def usyntax  (self, ast):
-        #breakpoint()
         raise SyntaxError(f'unsyntax not in quasisyntax {ast}')
     def susyntax (self, ast):
         #breakpoint()
@@ -339,15 +323,17 @@ class WalkEl(Walk):
                     hrm = [c.value(dialect_escapes)
                            if isinstance(c, SEscape)
                            else c for c in collect]
+                    orig = collect
                     next_dash = False
                     collect = []
                     coll_str = []
                     #print('wathrm:', hrm)
-                    for v in hrm:
+                    for v, o in zip(hrm, orig):
                         #print(v)
                         # FIXME if a char came from somewhere other than
                         # the elisp reader, we could make a mistake here
                         if isinstance(v, type) and issubclass(v, char.NeedDash):
+                            # FIXME still need instances here to hold points ?
                             collect.append(v)
                             next_dash = True
                         elif next_dash and v != '-':
@@ -357,7 +343,10 @@ class WalkEl(Walk):
                         elif isinstance(v, str):
                             coll_str.append(v)
                         elif v == char.UnicodeName:
-                            coll_str.append(SEscape('N'))
+                            _se = SEscape('N')
+                            _se._point_beg = o._point_beg
+                            _se._point_end = o._point_end
+                            coll_str.append(_se)
                         elif coll_str:
                             # once you are in the final char spec
                             # you can't go back out
@@ -371,7 +360,11 @@ class WalkEl(Walk):
                             regular_char = True
                         #print(coll_str)
                         if isinstance(coll_str[0], SEscape):
-                            collect.append(self.echarspec(ECharSpec(coll_str)).value)
+                            _ecs = ECharSpec(coll_str)
+                            _ecs._point_beg = coll_str[0]._point_beg
+                            _ecs._point_end = coll_str[0]._point_end
+                            # FIXME still broken I think
+                            collect.append(self.echarspec(_ecs).value)
                         else:
                             collect.append(self.charspec(CharSpec(coll_str)).value)
 

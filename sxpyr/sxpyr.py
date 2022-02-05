@@ -151,7 +151,10 @@ class Ast:
         # down the line, so we just error here
 
         if type(self.value) == type(self.__repr__):
-            raise TypeError('self.value has not been fully factored yet!')
+            raise TypeError(
+                'self.value has not been fully factored yet! '
+                'This usually happens if self.value is a function that takes.'
+            )
 
         return typef(self.value)
 
@@ -200,6 +203,11 @@ class ListAbstract(Ast):
 
     def __repr__(self):
         return f'<{self._o} {repr(self.collect)[1:-1]} {self._c}>'
+
+    @property
+    def value(self):
+        # FIXME !??!
+        return self
 
 
 class ListP(ListAbstract):
@@ -896,6 +904,8 @@ conf_txr = {
     **toks_b_list_s,
     't_to_quasi':       '^',
     't_to_splc_in_unq': '*',
+    't_to_xcom_in_shrp': ';',
+    #'t_to_binr_in_shrp': 'b',  # binary number repr
 }
 
 # union of all or as close as we can get
@@ -917,7 +927,7 @@ class Walk:
         (ListAbstract, '_labst'),
         (Sharp, '_sharp'),  # process this up here FIXME Dispatch has to be implemented as a macro function
         (Quote, '_quote'),  # racket allows unquote in quote
-        (IQuote, '_quote'),
+        (IQuote, '_iquote'),
         (WrapsNext, '_wraps_next'),  # lol I actually had it implemented already
         )
 
@@ -943,7 +953,7 @@ class Walk:
     )
 
     _unquote_family = 'uquote', 'suquote'
-    _q_funs = (  # quote like functions, update if there are others
+    _uqf_funs = (  # quote like functions, update if there are others
         (UQuote, '_uq_any'),
         (SUQuote, '_uq_any'),
     )
@@ -1075,36 +1085,44 @@ class Walk:
         try:
             # can't += because wraps next will match before these
             self._restore_stack.append((prev_rf, restore))
-            self._recurse_funs = self._q_funs + prev_rf
+            self._recurse_funs = self._uqf_funs + prev_rf
             #self.uquote, self.suquote = self.q_uqot, self.q_sunq
             # FIXME need to match function to type
             #if 'susyntax' in self._unquote_family:# and isinstance(ast, ISyntax):
                 #breakpoint()
             [setattr(self, fname, self._unquote_family_in_quote)
              for fname in self._unquote_family]
-            if debug: print('enter quot')
+            if debug: print('enter quot/stx')
             return self._wraps_next(ast)
         finally:
             self._recurse_funs = prev_rf
             [setattr(self, *fnf) for fnf in restore]
             self._restore_stack.pop()
-            if debug: print('leave quot')
+            if debug: print('leave quot/stx')
 
     def _unquote_family_in_quote(self, ast): return ast
 
-    def _iquote(self, ast):
-        # fake dynamic variables, non-threadsafe 
-        prev_rf, prev_uq, prev_suq = tuple(self._recurse_funs), self.uquote, self.suquote
+    def _quote_family_wrapper(self, ast, overwrite):
+        prev_rf, prev_uqf = tuple(self._recurse_funs), tuple(getattr(self, a) for a in self._unquote_family)
         try:
-            # can't += because wraps next will match before these
-            self._recurse_funs = self._q_funs + self._recurse_funs
-            self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
-            if debug: print('enter iqot')
+            self._recurse_funs = self._uqf_funs + self._recurse_funs
+            overwrite()
+            #self._recurse_funs = self._q_funs + self._recurse_funs
+            #self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
+            if debug: print('enter iqot/stx')
             return self._wraps_next(ast)
         finally:
             self._recurse_funs = prev_rf
-            self.uquote, self.suquote = prev_uq, prev_suq
-            if debug: print('leave iqot')
+            for fun, attr in zip(prev_uqf, self._unquote_family):
+                setattr(self, attr, fun)
+            if debug: print('leave iqot/stx')
+
+    def _iq_overwrite(self):
+        #self._recurse_funs = self._q_funs + self._recurse_funs
+        self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
+
+    def _iquote(self, ast):
+        return self._quote_family_wrapper(ast, self._iq_overwrite)
 
     def _uq_any(self, ast):
         # fake dynamic variables, non-threadsafe 
@@ -1118,16 +1136,13 @@ class Walk:
             self._restore_stack.append((c_prev_rf, c_restore))
             self._recurse_funs = prev_rf
             [setattr(self, *fnf) for fnf in restore]
-            #self.uquote, self.suquote = self._uquote, self._suquote
-            if debug: print('enter uqot')
+            if debug: print('enter uq/sot')
             return self._wraps_next(ast)
         finally:
             self._recurse_funs = c_prev_rf
             [setattr(self, *fnf) for fnf in c_restore]
             self._restore_stack.pop()
-            #self._recurse_funs = self._q_funs + self._recurse_funs
-            #self.uquote, self.suquote = self.iq_uqot, self.iq_sunq
-            if debug: print('leave uqot')
+            if debug: print('leave uq/sot')
 
     # override these per dialect
     def eatom     (self, ast): return ast
