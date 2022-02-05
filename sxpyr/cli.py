@@ -18,7 +18,8 @@ from sxpyr import (conf_sxpyr,
                    conf_rkt,
                    conf_gui,
                    conf_clj,
-                   conf_hy)
+                   conf_hy,
+                   conf_trx)
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
 from sxpyr import configure
 from sxpyr.sxpyr import make_do_path, DispatchNotImplementedError
@@ -37,6 +38,7 @@ parse_rkt = configure(**conf_rkt)
 parse_gui = configure(**conf_gui)
 parse_clj = configure(**conf_clj)
 parse_hy = configure(**conf_hy)
+parse_trx = configure(**conf_trx)
 
 read_rkt = conf_read(parse_rkt, WalkRkt)
 read_el = conf_read(parse_el, WalkEl)
