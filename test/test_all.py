@@ -1002,13 +1002,16 @@ def test_fails_read():
             '##',
             '#_',
             "#+ ()",
+            # #\\\x1a is ok #\^Z -> #\u001A but not #^Z
+            # this should fail in read but not parse
+            # it triggers bad syntax in racket
+            '#\x1a',
             )
     run_fails(read_rkt, bads)
 
 
 def test_fails_parse():
     bads = (
-        '#\x1a',
         ',',
         "(defun fail (parse)",
         '"I am an unterminated string',
