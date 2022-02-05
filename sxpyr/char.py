@@ -56,17 +56,17 @@ class ControlNeedDash(NeedDash):
 
 
 class ShiftNeedDash(NeedDash):
-    """ ?\S- ?? No idea. """
+    r""" ?\S- ?? No idea. """
     bit = 2 ** 25
 
 
 class SpaceOrSuperNeedDash(NeedDash):
-    """ ?\s- ?? No idea. """
+    r""" ?\s- ?? No idea. """
     bit = 2 ** 23
 
 
 class Octal(KeyChar):
-    """ ?\000 to ?\777 """
+    r""" ?\000 to ?\777 """
 
     def __init__(self, integer):
         self.value = integer
