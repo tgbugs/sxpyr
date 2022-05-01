@@ -3,22 +3,12 @@ import re
 import sys
 from pathlib import Path
 import pytest
-from sxpyr import (conf_sxpyr,
-                   conf_cl,
-                   conf_el,
-                   conf_xel,
-                   conf_rkt,
-                   conf_gui,
-                   conf_clj,
-                   conf_hy,
-                   conf_txr,)
+from sxpyr._exports import *
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
-from sxpyr import configure
 from sxpyr.sxpyr import (
     conf_read, Walk, conf_plist, WalkPl, plist_to_dict, PList, Ast,
+    make_do_path,
     UnknownStateError, DispatchNotImplementedError)
-
-from sxpyr import *
 
 git_path = Path('~/git/').expanduser()
 git_nofork_path = git_path / 'NOFORK'
@@ -139,7 +129,6 @@ def test_read():
 
 
 def test_read_paths():
-    from sxpyr.sxpyr import make_do_path
     def make_pr(parse, walk_cls):
         read = conf_read(parse, walk_cls)
         parse_path = make_do_path(parse)

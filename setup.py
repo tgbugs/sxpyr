@@ -8,7 +8,7 @@ def find_version(filename):
     for line in open(filename):
         version_match = _version_re.match(line)
         if version_match:
-            return version_match.group(1)
+            last = version_match.group(1)
 
     return last
 
@@ -44,7 +44,6 @@ setup(name='sxpyr',
           'Operating System :: POSIX :: Linux',
           'Operating System :: MacOS :: MacOS X',
           'Operating System :: Microsoft :: Windows',
-
       ],
       keywords=('lisp reader edn clojure racket scheme '
                 'elisp emacs sexp s-expression parser parsing'),
