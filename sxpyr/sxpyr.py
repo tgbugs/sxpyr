@@ -32,11 +32,38 @@ def python_to_sxpr(blob):
     # to have leading colons in keys etc. we can't do that with plists
     # and be able to use these in common lisp due to the ::symbol issue
     if isinstance(blob, dict):
-        return PList([[Keyword(k), dict_to_sxpr(v)] for k, v in blob.items()])
+        return PList([e for k, v in blob.items() for e in [Keyword(k)._set_bounds(), python_to_sxpr(v)]])
     elif isinstance(blob, list):
-        return List([dict_to_sxpr(v) for v in blob])
+        return List([python_to_sxpr(v) for v in blob])
+    elif blob is None:
+        return List([])
     else:
         return blob
+
+
+def print_plist(ast_dt):
+    if isinstance(ast_dt, LLike):
+        if ast_dt.value:
+            #if Keyword in [type(v) for v in ast_dt.value]:
+                #return '(\n', ')\n'
+            #else:
+            return '(', ')\n'
+        else:
+            return '()'
+    elif isinstance(ast_dt, Keyword):
+        return '\n:'
+    elif isinstance(ast_dt, str):
+        bad = '()[]{} \n\t\'\"'
+        if [c for c in bad if c in ast_dt]:
+            return dumps(ast_dt)
+        else:
+            # make it a symbol
+            return ast_dt
+    elif isinstance(ast_dt, int):
+        return str(ast_dt)
+    else:
+        breakpoint()
+        raise NotImplementedError(type(ast_dt))
 
 
 def make_do_path(do, chunksize=4096):
@@ -125,7 +152,16 @@ class _m:
 
 class Ast:
 
+    def _set_bounds(self, beg=None, end=None):
+        self._point_beg = beg
+        self._point_end = end
+        return self
+
     def __repr__(self, **kwargs):
+        if not hasattr(self, '_point_beg'):
+            # FIXME _point_beg and _point_end may not be know if the object
+            # is being printed instead of read ...
+            breakpoint()
         pb, pe = self._point_beg, self._point_end
         pts = f' ::{pb}:{pe}' if debug else ''
         if hasattr(self, 'value') and type(self.value) != type(self.__repr__):
@@ -251,6 +287,10 @@ class Keyword(Ast):
 
     def __init__(self, value):
         self.value = value
+
+    def _print(self, pf):
+        beg = pf(self)
+        return beg + self.value
 
 
 class EKeyword(Keyword):
@@ -606,6 +646,14 @@ class LLike(DataType):
         # FIXME recursion errors for deeply nested structures
         r = '\n'.join(repr(_) for _ in self.value)
         return self.o + r + self.c
+
+    def _print(self, pf):
+        beg, end = pf(self)
+        return beg + ' '.join([c._print(pf)
+                               # FIXME sigh type inhomogenaity in the IR ...
+                               if hasattr(c, '_print') else
+                               pf(c)
+                               for c in self.value]) + end
 
 
 class List(LLike):
@@ -1183,9 +1231,22 @@ class Walk:
 
 
 class WalkPl(Walk):
+
     def listp(self, ast):
-        if all(isinstance(_, Keyword) for _ in ast.collect[0::2]):
-            return PList.from_ast(ast)
+        noc = [self(v) for v in ast.collect if not self._skip(v)]
+        if all(isinstance(_, Keyword) for _ in noc[0::2]):
+            # FIXME recurse ???
+            # XXX indeed recursion can and does happen in Walk.__call__
+            return PList(noc)
+            #return PList.from_ast(ast)
+        else:
+            # we have to do this to handle cases where regular lists
+            # are nested recursively inside, we catch "not a plist"
+            # errors later
+            return List(noc)
+            #asdf = ast.collect[0::2]
+            #breakpoint()
+            #raise ValueError(f'wat\n{asdf}')
 
         return super().listp(ast)
 
