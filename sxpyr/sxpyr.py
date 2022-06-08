@@ -8,7 +8,7 @@
 # chainable and local because n must be defined, practically this ends
 # up being a wraps next that transitions the state to a wraps next
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 
 from io import TextIOWrapper
 from ast import literal_eval

@@ -29,7 +29,7 @@ parse_rkt = configure(**conf_rkt)
 parse_gui = configure(**conf_gui)
 parse_clj = configure(**conf_clj)
 parse_hy = configure(**conf_hy)
-parse_trx = configure(**conf_trx)
+parse_txr = configure(**conf_txr)
 
 read_rkt = conf_read(parse_rkt, WalkRkt)
 read_el = conf_read(parse_el, WalkEl)

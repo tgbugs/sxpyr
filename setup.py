@@ -50,7 +50,7 @@ setup(name='sxpyr',
       packages=[
           'sxpyr',
       ],
-      python_requires='>=3.7',
+      python_requires='>=3.6',
       tests_require=tests_require,
       extras_require={'test': tests_require,
                       'cli': cli_requires,
