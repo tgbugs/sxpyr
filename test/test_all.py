@@ -14,6 +14,14 @@ git_path = Path('~/git/').expanduser()
 git_nofork_path = git_path / 'NOFORK'
 test_data = Path(__file__).parent / 'data'
 
+SKIP_CI = 'CI' in os.environ
+skipif_ci = pytest.mark.skipif(SKIP_CI, reason='Need git paths and os paths.')
+SKIP_NETWORK = ('SKIP_NETWORK' in os.environ or
+                'FEATURES' in os.environ and 'network-sandbox' in os.environ['FEATURES'])
+skipif_no_net = pytest.mark.skipif(SKIP_NETWORK, reason='Skipping due to network requirement')
+SKIP_PATHS = not git_nofork_path.exists()
+skipif_no_paths = pytest.mark.skipif(SKIP_CI or SKIP_NETWORK or SKIP_PATHS, reason='test files not present')
+
 parse_common = configure()
 parse_plist = configure(**conf_plist)
 parse_sxpyr = configure(**conf_sxpyr)
@@ -128,6 +136,7 @@ def test_read():
     sprint(read_rkt("#`(a #,(b #,(c)))"), fail=True)
 
 
+@skipif_no_paths
 def test_read_paths():
     def make_pr(parse, walk_cls):
         read = conf_read(parse, walk_cls)
@@ -728,7 +737,7 @@ def test_chars(debug=False):
                 sprint(parser(tstr), match=[ast])
 
 
-@pytest.mark.skipif('CI' in os.environ, reason='Need git paths and os paths.')
+@skipif_no_paths
 def test_parse_paths():
     paths = (
         #(git_nofork_path / 'racket/racket/share/pkgs/future-visualizer/future-visualizer/tests/visualizer.rkt'),
