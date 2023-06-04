@@ -8,7 +8,7 @@
 # chainable and local because n must be defined, practically this ends
 # up being a wraps next that transitions the state to a wraps next
 
-__version__ = '0.0.3'
+__version__ = '0.0.4'
 
 from io import TextIOWrapper
 from ast import literal_eval
@@ -23,7 +23,7 @@ class UnknownStateError(SxpyrError): pass
 class DispatchNotImplementedError(SxpyrError): pass
 
 
-def python_to_sxpr(blob):
+def python_to_sxpr(blob, str_as_string=False):
     # maybe json to sxpr to be safe? use the json normalization that we have?
     # blob to sxpr?
 
@@ -32,38 +32,55 @@ def python_to_sxpr(blob):
     # to have leading colons in keys etc. we can't do that with plists
     # and be able to use these in common lisp due to the ::symbol issue
     if isinstance(blob, dict):
-        return PList([e for k, v in blob.items() for e in [Keyword(k)._set_bounds(), python_to_sxpr(v)]])
-    elif isinstance(blob, list):
-        return List([python_to_sxpr(v) for v in blob])
+        return PList(
+            [e for k, v in blob.items()
+             for e in [Keyword(k)._set_bounds(),
+                       python_to_sxpr(v, str_as_string=str_as_string)]])
+    elif isinstance(blob, list) or isinstance(blob, tuple):
+        return List(
+            [python_to_sxpr(v, str_as_string=str_as_string)
+             for v in blob])
+    elif str_as_string and isinstance(blob, str):
+        return String(blob)
     elif blob is None:
         return List([])
     else:
         return blob
 
 
-def print_plist(ast_dt):
-    if isinstance(ast_dt, LLike):
-        if ast_dt.value:
-            #if Keyword in [type(v) for v in ast_dt.value]:
-                #return '(\n', ')\n'
-            #else:
-            return '(', ')\n'
-        else:
-            return '()'
-    elif isinstance(ast_dt, Keyword):
-        return '\n:'
-    elif isinstance(ast_dt, str):
-        bad = '()[]{} \n\t\'\"'
-        if [c for c in bad if c in ast_dt]:
+def configure_print_plist(newline_keyword=True):
+    def print_plist(ast_dt, last=False):
+        """print function for plists, returns begining or begining + end"""
+        if isinstance(ast_dt, LLike):
+            if ast_dt.value:
+                #if Keyword in [type(v) for v in ast_dt.value]:
+                    #return '(\n', ')\n'
+                #else:
+                return '(', (')' + ('' if last else '\n'))
+            else:
+                return '()'
+        elif isinstance(ast_dt, Keyword):
+            return '\n:' if newline_keyword else ':'
+        elif isinstance(ast_dt, String):
+            # explicit String always dumps
             return dumps(ast_dt)
+        elif isinstance(ast_dt, str):
+            bad = '()[]{} \n\t\'\"'
+            if [c for c in bad if c in ast_dt]:
+                return dumps(ast_dt)
+            else:
+                # make it a symbol
+                return ast_dt
+        elif isinstance(ast_dt, int):
+            return str(ast_dt)
         else:
-            # make it a symbol
-            return ast_dt
-    elif isinstance(ast_dt, int):
-        return str(ast_dt)
-    else:
-        breakpoint()
-        raise NotImplementedError(type(ast_dt))
+            breakpoint()
+            raise NotImplementedError(type(ast_dt))
+
+    return print_plist
+
+
+print_plist = configure_print_plist()
 
 
 def make_do_path(do, chunksize=4096):
@@ -288,8 +305,8 @@ class Keyword(Ast):
     def __init__(self, value):
         self.value = value
 
-    def _print(self, pf):
-        beg = pf(self)
+    def _print(self, pf, last=False):
+        beg = pf(self, last=last)
         return beg + self.value
 
 
@@ -647,13 +664,14 @@ class LLike(DataType):
         r = '\n'.join(repr(_) for _ in self.value)
         return self.o + r + self.c
 
-    def _print(self, pf):
-        beg, end = pf(self)
-        return beg + ' '.join([c._print(pf)
+    def _print(self, pf, last=False):
+        beg, end = pf(self, last=last)
+        lend = len(self.value) - 1
+        return beg + ' '.join([c._print(pf, last=(i == lend))
                                # FIXME sigh type inhomogenaity in the IR ...
                                if hasattr(c, '_print') else
-                               pf(c)
-                               for c in self.value]) + end
+                               pf(c, last=(i == len))
+                               for i, c in enumerate(self.value)]) + end
 
 
 class List(LLike):
