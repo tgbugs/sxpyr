@@ -9,7 +9,7 @@ Options:
 """
 
 import pathlib
-from pyontutils import clifun as clif
+import clifn
 from sxpyr import sxpyr as sxpyrmod
 from sxpyr._exports import *
 from sxpyr.walks import WalkRkt, WalkCl, WalkEl
@@ -43,7 +43,7 @@ def readFromStdIn(stdin=None):
         return stdin
 
 
-class Options(clif.Options):
+class Options(clifn.Options):
 
     @property
     def path(self):
@@ -54,7 +54,7 @@ class Options(clif.Options):
         #return self._args['-']
 
 
-class Main(clif.Dispatcher):
+class Main(clifn.Dispatcher):
 
     def default(self):
         raise NotImplementedError('oops')
