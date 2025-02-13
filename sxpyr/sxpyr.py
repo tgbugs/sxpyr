@@ -65,7 +65,7 @@ def configure_print_plist(newline_keyword=True):
             # explicit String always dumps
             return dumps(ast_dt)
         elif isinstance(ast_dt, str):
-            bad = '()[]{} \n\t\'\"'
+            bad = '()[]{} \n\t\'"'
             if [c for c in bad if c in ast_dt]:
                 return dumps(ast_dt)
             else:
@@ -417,9 +417,16 @@ class EString(Ast):
         self.collect = collect
 
     def value(self, dialect_escapes):
-        ''.join([c.value(dialect_escapes)
-                 if isinstance(c, SEscape)
-                 else c for c in self.collect])
+        # FIXME this almost works for unicode \uXXXX escapes which technically
+        # should probably operate during an earlier phase of the reader HOWEVER
+        # having dialect_escapes convert "u" -> "\\u" works in this case if the
+        # Walker uses ast.value(des).encode().decode('unicode-escape') because
+        # python string syntax matches most lisp string escape syntax, however
+        # there are edge cases, so caution is required
+        return ''.join(
+            [c.value(dialect_escapes)
+             if isinstance(c, SEscape)
+             else c for c in self.collect])
 
 
 class CharSpec(Ast):
